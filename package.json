@@ -1,0 +1,80 @@
+{
+  "name": "apcore-a2a",
+  "version": "0.1.0",
+  "description": "Automatic A2A Protocol Adapter for apcore Module Registry",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "apcore-a2a": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc && cp src/explorer/index.html dist/explorer/index.html",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/ tests/",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@a2a-js/sdk": "^0.3.10",
+    "apcore-js": "file:../apcore-typescript",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/node": "^20.0.0",
+    "@types/supertest": "^7.2.0",
+    "@vitest/coverage-v8": "^3.0.0",
+    "apdev-js": "^0.2.0",
+    "supertest": "^7.2.2",
+    "typescript": "^5.5.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aipartnerup/apcore-a2a-typescript.git"
+  },
+  "homepage": "https://aipartnerup.com",
+  "bugs": {
+    "url": "https://github.com/aipartnerup/apcore-a2a-typescript/issues"
+  },
+  "keywords": [
+    "apcore",
+    "a2a",
+    "agent-to-agent",
+    "agent2agent",
+    "ai-agent",
+    "agent-protocol",
+    "agent-card",
+    "json-rpc",
+    "json-schema",
+    "sse",
+    "streaming",
+    "server",
+    "client",
+    "cli",
+    "jwt",
+    "express"
+  ]
+}

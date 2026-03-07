@@ -1,0 +1,117 @@
+{
+  "project": "apcore-a2a-typescript",
+  "source": "apcore-a2a (docs) + apcore-a2a-python (reference)",
+  "target_language": "typescript",
+  "created": "2026-03-06",
+  "status": "complete",
+  "features": [
+    {
+      "id": "F-01",
+      "name": "Adapters",
+      "status": "complete",
+      "files": [
+        "src/adapters/skill-mapper.ts",
+        "src/adapters/agent-card.ts",
+        "src/adapters/schema.ts",
+        "src/adapters/parts.ts",
+        "src/adapters/errors.ts",
+        "src/adapters/index.ts"
+      ],
+      "tests": [
+        "tests/adapters/skill-mapper.test.ts",
+        "tests/adapters/agent-card.test.ts",
+        "tests/adapters/schema.test.ts",
+        "tests/adapters/parts.test.ts",
+        "tests/adapters/errors.test.ts"
+      ]
+    },
+    {
+      "id": "F-02",
+      "name": "Storage",
+      "status": "complete",
+      "files": ["src/storage/index.ts"],
+      "tests": ["tests/storage/storage.test.ts"]
+    },
+    {
+      "id": "F-03",
+      "name": "Server Core",
+      "status": "complete",
+      "files": [
+        "src/server/executor.ts",
+        "src/server/factory.ts",
+        "src/server/index.ts"
+      ],
+      "tests": [
+        "tests/server/executor.test.ts",
+        "tests/server/factory.test.ts"
+      ]
+    },
+    {
+      "id": "F-06",
+      "name": "Auth",
+      "status": "complete",
+      "files": [
+        "src/auth/types.ts",
+        "src/auth/jwt.ts",
+        "src/auth/middleware.ts",
+        "src/auth/storage.ts",
+        "src/auth/index.ts"
+      ],
+      "tests": [
+        "tests/auth/jwt.test.ts",
+        "tests/auth/middleware.test.ts"
+      ]
+    },
+    {
+      "id": "F-07",
+      "name": "Client",
+      "status": "complete",
+      "files": [
+        "src/client/exceptions.ts",
+        "src/client/card-fetcher.ts",
+        "src/client/client.ts",
+        "src/client/index.ts"
+      ],
+      "tests": [
+        "tests/client/client.test.ts",
+        "tests/client/card-fetcher.test.ts"
+      ]
+    },
+    {
+      "id": "F-08",
+      "name": "Public API",
+      "status": "complete",
+      "files": [
+        "src/serve.ts",
+        "src/index.ts"
+      ],
+      "tests": ["tests/serve.test.ts"]
+    },
+    {
+      "id": "F-09",
+      "name": "CLI",
+      "status": "complete",
+      "files": ["src/cli.ts"],
+      "tests": ["tests/cli.test.ts"]
+    },
+    {
+      "id": "F-10",
+      "name": "Explorer",
+      "status": "complete",
+      "files": [
+        "src/explorer/handler.ts",
+        "src/explorer/index.html",
+        "src/explorer/index.ts"
+      ],
+      "tests": ["tests/explorer/handler.test.ts"]
+    },
+    {
+      "id": "F-11",
+      "name": "Ops",
+      "status": "complete",
+      "files": [],
+      "tests": [],
+      "note": "Health and metrics endpoints built into F-03 (ServerFactory). Tested in tests/server/factory.test.ts"
+    }
+  ]
+}
