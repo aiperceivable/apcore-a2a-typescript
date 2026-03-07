@@ -2,24 +2,58 @@
   <img src="https://raw.githubusercontent.com/aipartnerup/apcore-a2a/main/apcore-a2a-logo.svg" alt="apcore-a2a logo" width="200"/>
 </div>
 
-# apcore-a2a
+# apcore-a2a (TypeScript)
 
 [![npm](https://img.shields.io/npm/v/apcore-a2a)](https://www.npmjs.com/package/apcore-a2a)
 [![Node.js](https://img.shields.io/node/v/apcore-a2a)](https://www.npmjs.com/package/apcore-a2a)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)](https://github.com/aipartnerup/apcore-a2a-typescript)
 
-**apcore-a2a** automatically converts any apcore Module Registry into a fully functional [A2A (Agent-to-Agent) protocol](https://google.github.io/A2A/) server and client — zero boilerplate required.
+## What is apcore-a2a?
+
+**apcore-a2a** is the [A2A (Agent-to-Agent)](https://google.github.io/A2A/) protocol adapter for the [apcore](https://github.com/aipartnerup/apcore-typescript) ecosystem.
+
+It solves a common problem: **you've built AI capabilities with apcore modules, but you need them to talk to other AI agents over a standard protocol.** apcore-a2a bridges that gap — it reads your existing module metadata (schemas, descriptions, examples) and automatically exposes them as a standards-compliant A2A server. No hand-written Agent Cards, no JSON-RPC boilerplate, no manual task lifecycle management.
+
+**In short:** `apcore modules` + `apcore-a2a` = a fully functional A2A agent, ready to be discovered and invoked by any A2A-compatible client.
 
 Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express 5](https://expressjs.com/).
 
-## Installation
+> **Also available in Python:** [`apcore-a2a` (PyPI)](https://github.com/aipartnerup/apcore-a2a-python)
+
+## Features
+
+- **One-call server** — launch a compliant A2A server with `serve(registry)`
+- **Automatic Agent Card** — `/.well-known/agent-card.json` generated from module metadata
+- **Skill mapping** — apcore modules become A2A Skills with names, descriptions, tags, and examples
+- **Full task lifecycle** — submitted, working, completed, failed, canceled, input-required
+- **SSE streaming** — `message/stream` with real-time status and artifact updates
+- **JWT authentication** — tokens bridged to apcore's Identity context
+- **A2A Explorer UI** — browser UI for discovering and testing skills
+- **Built-in client** — `A2AClient` for calling remote A2A agents
+- **CLI support** — `npx apcore-a2a serve` for zero-code startup
+- **Pluggable storage** — swap in Redis or PostgreSQL via the `TaskStore` interface
+- **Observability** — `/health`, `/metrics` endpoints
+- **Dynamic registration** — add/remove modules at runtime without restart
+
+## Requirements
+
+- Node.js >= 18.0.0
+- `apcore-js` >= 0.8.0
+
+---
+
+## For Users: Getting Started
+
+### Installation
 
 ```bash
 npm install apcore-a2a
 ```
 
-## Quick Start
+### Expose your modules as an A2A Agent
+
+If you already have apcore modules, three lines turn them into a discoverable agent:
 
 ```typescript
 import { Registry } from "apcore-js";
@@ -30,9 +64,11 @@ const registry = new Registry({ extensionsDir: "./extensions" });
 serve(registry); // Starts on http://0.0.0.0:8000
 ```
 
-Agent Card is automatically served at `/.well-known/agent-card.json`. All registered modules appear as A2A Skills.
+Your agent is now live at `http://localhost:8000/.well-known/agent-card.json`.
 
-### CLI
+### CLI (zero-code)
+
+No code needed — use the CLI to serve modules directly:
 
 ```bash
 npx apcore-a2a serve --extensions-dir ./extensions
@@ -40,22 +76,65 @@ npx apcore-a2a serve --extensions-dir ./extensions --port 3000 --explorer --metr
 npx apcore-a2a serve --extensions-dir ./extensions --auth-type bearer --auth-key mysecret
 ```
 
-## Features
+### Call a remote A2A Agent
 
-- **Automatic Agent Card generation** — modules mapped to Skills with names, descriptions, tags, and examples
-- **JSON-RPC 2.0 transport** — `message/send` and `message/stream` endpoints via `@a2a-js/sdk`
-- **Full A2A task lifecycle** — submitted, working, completed, failed, canceled, input-required
-- **SSE streaming** — `message/stream` with real-time `TaskStatusUpdateEvent` and `TaskArtifactUpdateEvent`
-- **JWT authentication** — `JWTAuthenticator` bridges tokens to apcore Identity context
-- **A2A Explorer UI** — optional browser UI for discovering and testing skills (`--explorer`)
-- **A2A client** — `A2AClient` for discovering and invoking remote A2A agents
-- **Pluggable storage** — swap in Redis or PostgreSQL via the `TaskStore` interface
-- **Observability** — `/health` and `/metrics` endpoints
-- **Dynamic registration** — add/remove modules at runtime without restart
+Use the built-in client to discover and invoke any A2A-compliant agent:
 
-## API Reference
+```typescript
+import { A2AClient } from "apcore-a2a";
+
+const client = new A2AClient("http://agent.example.com", {
+  auth: "Bearer my-token",
+  timeout: 30_000,
+});
+
+// Discover what the agent can do
+const card = await client.discover();
+console.log(`Agent: ${card.name}, Skills: ${card.skills.length}`);
+
+// Send a message
+const task = await client.sendMessage(
+  { role: "user", parts: [{ kind: "text", text: "hello" }] },
+  { contextId: "ctx-1" },
+);
+console.log(`Result: ${task.status.state}`);
+
+// Or stream the response
+for await (const event of client.streamMessage(message)) {
+  console.log(event);
+}
+
+client.close();
+```
+
+### Add authentication
+
+```typescript
+import { JWTAuthenticator } from "apcore-a2a";
+
+const auth = new JWTAuthenticator("your-secret-key", {
+  algorithms: ["HS256"],
+  issuer: "https://auth.example.com",
+  audience: "my-agent",
+  claimMapping: {
+    idClaim: "sub",
+    typeClaim: "type",
+    rolesClaim: "roles",
+    attrsClaims: ["org", "dept"],
+  },
+  requireClaims: ["sub"],
+});
+
+serve(registry, { auth });
+```
+
+---
+
+## For Developers: API Reference
 
 ### `serve()`
+
+Blocking call — starts an HTTP server and serves until SIGINT/SIGTERM.
 
 ```typescript
 import { serve } from "apcore-a2a";
@@ -78,9 +157,9 @@ serve(registryOrExecutor, {
 });
 ```
 
-Blocking call — starts an HTTP server and serves until SIGINT/SIGTERM.
-
 ### `asyncServe()`
+
+Returns the Express app without starting a server — use for embedding in larger applications or testing.
 
 ```typescript
 import { asyncServe } from "apcore-a2a";
@@ -89,54 +168,9 @@ const app = await asyncServe(registryOrExecutor, options);
 // app is an Express application — mount it or start your own server
 ```
 
-Returns the Express app without starting a server — use for embedding in larger applications or testing.
+### `TaskStore`
 
-### `A2AClient`
-
-```typescript
-import { A2AClient } from "apcore-a2a";
-
-const client = new A2AClient("http://agent.example.com", {
-  auth: "Bearer my-token",
-  timeout: 30_000,
-});
-
-const card = await client.discover();
-
-const task = await client.sendMessage(
-  { role: "user", parts: [{ kind: "text", text: "hello" }] },
-  { contextId: "ctx-1" },
-);
-
-for await (const event of client.streamMessage(message)) {
-  console.log(event);
-}
-
-client.close();
-```
-
-### `JWTAuthenticator`
-
-```typescript
-import { JWTAuthenticator } from "apcore-a2a";
-
-const auth = new JWTAuthenticator("your-secret-key", {
-  algorithms: ["HS256"],
-  issuer: "https://auth.example.com",
-  audience: "my-agent",
-  claimMapping: {
-    idClaim: "sub",
-    typeClaim: "type",
-    rolesClaim: "roles",
-    attrsClaims: ["org", "dept"],
-  },
-  requireClaims: ["sub"],
-});
-
-serve(registry, { auth });
-```
-
-### TaskStore
+Default in-memory task store. Implement the `TaskStore` interface (`save`, `load`) for persistent backends.
 
 ```typescript
 import { InMemoryTaskStore } from "apcore-a2a/storage";
@@ -145,39 +179,55 @@ const store = new InMemoryTaskStore();
 serve(registry, { taskStore: store });
 ```
 
-Default in-memory task store. Implement the `TaskStore` interface (`save`, `load`) for persistent backends.
-
-## Architecture
+### Architecture
 
 ```
 apcore Registry
-       │
-       ▼
-┌─────────────────────────────────────────────┐
-│  apcore-a2a                                 │
-│  ┌──────────┐  ┌───────────┐  ┌──────────┐ │
-│  │ Adapters  │  │  Server   │  │   Auth   │ │
-│  │ SkillMap  │  │ Executor  │  │  JWT     │ │
-│  │ Schema    │  │ Factory   │  │  Middle  │ │
-│  │ Parts     │  │ Health    │  │  Storage │ │
-│  │ ErrorMap  │  │ Metrics   │  │          │ │
-│  │ AgentCard │  │           │  │          │ │
-│  └──────────┘  └───────────┘  └──────────┘ │
-│  ┌──────────┐  ┌───────────┐               │
-│  │  Client  │  │ Explorer  │               │
-│  │ A2AClient│  │ HTML UI   │               │
-│  │ CardFetch│  │           │               │
-│  └──────────┘  └───────────┘               │
-└─────────────────────────────────────────────┘
-       │
-       ▼
+       |
+       v
++---------------------------------------------+
+|  apcore-a2a                                 |
+|  +----------+  +-----------+  +----------+  |
+|  | Adapters |  |  Server   |  |   Auth   |  |
+|  | SkillMap |  | Executor  |  |  JWT     |  |
+|  | Schema   |  | Factory   |  |  Middle  |  |
+|  | Parts    |  | Health    |  |  Storage |  |
+|  | ErrorMap |  | Metrics   |  |          |  |
+|  | AgentCard|  |           |  |          |  |
+|  +----------+  +-----------+  +----------+  |
+|  +----------+  +-----------+                |
+|  |  Client  |  | Explorer  |                |
+|  | A2AClient|  | HTML UI   |                |
+|  | CardFetch|  |           |                |
+|  +----------+  +-----------+                |
++---------------------------------------------+
+       |
+       v
   @a2a-js/sdk + Express 5
 ```
 
-## Requirements
+| A2A Concept    | apcore Mapping                            |
+| -------------- | ----------------------------------------- |
+| **Agent Card** | Derived from Registry configuration       |
+| **Skill**      | Maps 1:1 to an apcore Module              |
+| **Task**       | Managed execution of `Executor.callAsync()` |
+| **Streaming**  | Wrapped `Executor.stream()` via SSE       |
+| **Security**   | Bridged to apcore's `Identity` context    |
 
-- Node.js >= 18.0.0
-- `apcore-js` >= 0.8.0
+### Contributing
+
+```bash
+git clone https://github.com/aipartnerup/apcore-a2a-typescript.git
+cd apcore-a2a-typescript
+npm install
+npm test
+```
+
+## Documentation
+
+- [Product Requirements (PRD)](https://github.com/aipartnerup/apcore-a2a/blob/main/docs/apcore-a2a/prd.md)
+- [Technical Design](https://github.com/aipartnerup/apcore-a2a/blob/main/docs/apcore-a2a/tech-design.md)
+- [Software Requirements (SRS)](https://github.com/aipartnerup/apcore-a2a/blob/main/docs/apcore-a2a/srs.md)
 
 ## License
 
