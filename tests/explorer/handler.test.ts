@@ -145,7 +145,7 @@ describe("Explorer Router", () => {
 
 describe("Explorer HTML — Layout", () => {
   it("contains header with title and A2A badge", () => {
-    expect(sharedHtml).toContain("A2A Agent Explorer");
+    expect(sharedHtml).toContain("APCore A2A Agent Explorer");
     expect(sharedHtml).toContain('class="badge"');
     expect(sharedHtml).toContain(">A2A<");
   });
@@ -539,7 +539,7 @@ describe("Explorer integration with A2AServerFactory", () => {
 
     expect(htmlRes.status).toBe(200);
     expect(htmlRes.headers["content-type"]).toMatch(/html/);
-    expect(htmlRes.text).toContain("A2A Agent Explorer");
+    expect(htmlRes.text).toContain("APCore A2A Agent Explorer");
 
     expect(cardRes.status).toBe(200);
     expect(cardRes.body.name).toBe("TestAgent");
@@ -559,7 +559,7 @@ describe("Explorer integration with A2AServerFactory", () => {
     const cardRes = await request(app).get("/ui/agent-card");
 
     expect(htmlRes.status).toBe(200);
-    expect(htmlRes.text).toContain("A2A Agent Explorer");
+    expect(htmlRes.text).toContain("APCore A2A Agent Explorer");
     expect(cardRes.status).toBe(200);
     expect(cardRes.body.name).toBe("TestAgent");
   });
