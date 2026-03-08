@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-03-08
+
+### Added
+
+- **Examples**: 5 runnable demo modules with unified launcher (`examples/run.ts`)
+  - Class-based modules: `text_echo`, `math_calc`, `greeting` (TypeBox schemas, `extensions/` directory)
+  - Programmatic modules: `convert_temperature`, `word_count` (zero-code-intrusion via `module()` factory in `binding_demo/`)
+  - JWT authentication demo with pre-generated test token
+- **Explorer enhancements**: Auth bar and cURL generation
+  - Token input with status indicator and `sessionStorage` persistence
+  - Auto-generated cURL commands for every `message/send` request (rendered in `finally` block)
+  - Keyboard shortcut display (`Ctrl+Enter` / `Cmd+Enter`)
+
+### Fixed
+
+- **Explorer not mounted** — `factory.ts` imported `createExplorerRouter` but never wired it; explorer route now properly mounted when `explorer: true`
+- **Runtime crash on module discovery** — `SkillMapper.humanizeModuleId()` called `.replace()` on `undefined` because `Registry.getDefinition()` does not include `module_id`. Made `ModuleDescriptor.module_id` optional, added `moduleId` fallback parameter to `toSkill()`
+- **Empty skill ID** — `toSkill()` returned a skill with `id: ""` when no ID was available; now returns `null` (P2)
+- **Duplicate `explorerPrefix` resolution** — was resolved twice in `factory.ts`; extracted to single `const` (P1)
+- **cURL skipped on JSON parse error** — `renderCurl` was in try block after response parsing; moved to `finally` block so cURL always renders (P2)
+
+### Changed
+
+- `apcore-js` dependency bumped from `^0.8.0` to `^0.9.0`
+- `@sinclair/typebox` added as devDependency for example schemas
+- Test coverage expanded from 157 to 238 tests (81 new explorer tests, 3 new skill-mapper tests)
+
 ## [0.1.0] - 2026-03-06
 
 ### Added
@@ -46,4 +73,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `express` ^5.1.0
 - `jsonwebtoken` ^9.0.3
 
+[0.2.0]: https://github.com/aipartnerup/apcore-a2a-typescript/releases/tag/v0.2.0
 [0.1.0]: https://github.com/aipartnerup/apcore-a2a-typescript/releases/tag/v0.1.0

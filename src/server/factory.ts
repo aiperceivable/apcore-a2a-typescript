@@ -19,6 +19,7 @@ import { AgentCardBuilder, type Registry } from "../adapters/agent-card.js";
 import { PartConverter } from "../adapters/parts.js";
 import { ApCoreAgentExecutor } from "./executor.js";
 import { createAuthMiddleware } from "../auth/middleware.js";
+import { createExplorerRouter } from "../explorer/handler.js";
 import type { Authenticator } from "../auth/types.js";
 
 const ACTIVE_STATES = new Set(["submitted", "working", "input-required"]);
@@ -135,9 +136,10 @@ export class A2AServerFactory {
     const app = express();
     app.use(express.json());
 
+    const explorerPrefix = opts.explorerPrefix ?? "/explorer";
+
     // Auth middleware (before routes)
     if (opts.auth) {
-      const explorerPrefix = opts.explorerPrefix ?? "/explorer";
       const exemptPrefixes = opts.explorer ? new Set([explorerPrefix]) : new Set<string>();
       app.use(
         createAuthMiddleware({
@@ -187,6 +189,11 @@ export class A2AServerFactory {
         userBuilder: UserBuilder.noAuthentication,
       }),
     );
+
+    // Explorer UI
+    if (opts.explorer) {
+      app.use(explorerPrefix, createExplorerRouter(agentCard));
+    }
 
     // Health endpoint
     app.get("/health", async (_req: Request, res: Response) => {

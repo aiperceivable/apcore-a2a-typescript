@@ -29,7 +29,7 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 - **Full task lifecycle** — submitted, working, completed, failed, canceled, input-required
 - **SSE streaming** — `message/stream` with real-time status and artifact updates
 - **JWT authentication** — tokens bridged to apcore's Identity context
-- **A2A Explorer UI** — browser UI for discovering and testing skills
+- **A2A Explorer UI** — browser UI for discovering and testing skills, with auth bar and cURL generation
 - **Built-in client** — `A2AClient` for calling remote A2A agents
 - **CLI support** — `npx apcore-a2a serve` for zero-code startup
 - **Pluggable storage** — swap in Redis or PostgreSQL via the `TaskStore` interface
@@ -39,7 +39,7 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 ## Requirements
 
 - Node.js >= 18.0.0
-- `apcore-js` >= 0.8.0
+- `apcore-js` >= 0.9.0
 
 ---
 
@@ -213,6 +213,22 @@ apcore Registry
 | **Task**       | Managed execution of `Executor.callAsync()` |
 | **Streaming**  | Wrapped `Executor.stream()` via SSE       |
 | **Security**   | Bridged to apcore's `Identity` context    |
+
+### Examples
+
+The `examples/` directory contains 5 runnable demo modules covering both integration styles:
+
+```bash
+# Run all 5 modules with Explorer UI
+npx tsx examples/run.ts
+
+# With JWT auth
+JWT_SECRET=my-secret npx tsx examples/run.ts
+```
+
+Open http://127.0.0.1:8000/explorer/ to discover and test skills interactively.
+
+See [`examples/README.md`](examples/README.md) for details on class-based vs programmatic module patterns.
 
 ### Contributing
 

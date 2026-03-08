@@ -29,6 +29,28 @@ describe("SkillMapper", () => {
       expect(mapper.toSkill(descriptor)).toBeNull();
     });
 
+    it("returns null when neither descriptor.module_id nor fallback moduleId is provided", () => {
+      const descriptor: ModuleDescriptor = { description: "No ID module" };
+      expect(mapper.toSkill(descriptor)).toBeNull();
+    });
+
+    it("uses fallback moduleId when descriptor.module_id is missing", () => {
+      const descriptor: ModuleDescriptor = { description: "Discovered module" };
+      const skill = mapper.toSkill(descriptor, "text_echo");
+      expect(skill).not.toBeNull();
+      expect(skill!.id).toBe("text_echo");
+      expect(skill!.name).toBe("Text Echo");
+    });
+
+    it("prefers descriptor.module_id over fallback moduleId", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "from.descriptor",
+        description: "Has both IDs",
+      };
+      const skill = mapper.toSkill(descriptor, "from_fallback");
+      expect(skill!.id).toBe("from.descriptor");
+    });
+
     it("builds AgentSkill from descriptor with description", () => {
       const descriptor: ModuleDescriptor = {
         module_id: "image.resize",

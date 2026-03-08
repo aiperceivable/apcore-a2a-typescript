@@ -74,7 +74,7 @@ export class AgentCardBuilder {
     for (const moduleId of registry.list()) {
       const descriptor = registry.getDefinition(moduleId);
       if (!descriptor?.description) continue;
-      const skill = this.skillMapper.toSkill(descriptor);
+      const skill = this.skillMapper.toSkill(descriptor, moduleId);
       if (skill) skills.push(skill);
     }
     return skills;

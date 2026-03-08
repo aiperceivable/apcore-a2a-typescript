@@ -1,7 +1,7 @@
 import type { AgentSkill } from "@a2a-js/sdk";
 
 export interface ModuleDescriptor {
-  module_id: string;
+  module_id?: string;
   description?: string;
   input_schema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
@@ -11,13 +11,15 @@ export interface ModuleDescriptor {
 }
 
 export class SkillMapper {
-  toSkill(descriptor: ModuleDescriptor): AgentSkill | null {
+  toSkill(descriptor: ModuleDescriptor, moduleId?: string): AgentSkill | null {
     const description = descriptor.description;
     if (!description) return null;
 
+    const id = descriptor.module_id ?? moduleId;
+    if (!id) return null;
     return {
-      id: descriptor.module_id,
-      name: this.humanizeModuleId(descriptor.module_id),
+      id,
+      name: this.humanizeModuleId(id),
       description,
       tags: [...(descriptor.tags ?? [])],
       inputModes: this.computeInputModes(descriptor),
