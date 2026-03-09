@@ -325,8 +325,6 @@ pre.result-box.has-content { color: #e2e8f0; }
   font-family: monospace;
   font-size: 0.75rem;
   overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
   position: relative;
 }
 .copy-btn {
@@ -342,6 +340,13 @@ pre.result-box.has-content { color: #e2e8f0; }
   cursor: pointer;
 }
 .copy-btn:hover { background: #475569; color: #e2e8f0; }
+.example-link {
+  color: #4f46e5;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: 0.8rem;
+}
+.example-link:hover { color: #3730a3; }
 @media (max-width: 768px) {
   .layout { grid-template-columns: 1fr; }
   .sidebar { border-right: none; border-bottom: 1px solid #e2e8f0; }
@@ -358,7 +363,7 @@ pre.result-box.has-content { color: #e2e8f0; }
 
 <div class="auth-bar">
   <label for="auth-token">Authorization</label>
-  <input type="text" id="auth-token" placeholder="Bearer eyJhbGci... (paste JWT token here)">
+  <input type="password" id="auth-token" placeholder="Bearer eyJhbGci... (paste JWT token here)">
   <span class="auth-status auth-unlocked" id="auth-status">No token</span>
 </div>
 
@@ -457,6 +462,7 @@ const EXPLORER_PREFIX = window.location.pathname.replace(/\/+$/, "");
 const AGENT_BASE = window.location.origin;
 
 let agentCard = null;
+let inputSchemas = {};
 let rpcId = 1;
 
 // ── Auth bar ────────────────────────────────────────────────────────────────
@@ -490,6 +496,7 @@ async function init() {
     const res = await fetch(EXPLORER_PREFIX + "/agent-card");
     if (!res.ok) throw new Error("HTTP " + res.status);
     agentCard = await res.json();
+    inputSchemas = agentCard._inputSchemas || {};
     renderCard(agentCard);
     renderSkills(agentCard.skills || []);
     populateSkillSelect(agentCard.skills || []);
@@ -548,9 +555,16 @@ function renderSkills(skills) {
     const inModes = (s.inputModes || []).map(m => `<span class="mode-badge">${esc(m)}</span>`).join("");
     const outModes = (s.outputModes || []).map(m => `<span class="mode-badge out">${esc(m)}</span>`).join("");
     const tags = (s.tags || []).map(t => `<span class="cap-badge">${esc(t)}</span>`).join("");
-    const examples = (s.examples || []).slice(0, 3);
-    const examplesHtml = examples.length
-      ? `<p><strong>Examples:</strong></p><ul style="margin-left:16px;font-size:0.8rem;">${examples.map(e => `<li>${esc(String(e))}</li>`).join("")}</ul>`
+    let displayExamples = (s.examples || []).slice(0, 5);
+    if (!displayExamples.length) {
+      const sample = sampleJsonForSkill(s.id);
+      if (sample) displayExamples = [sample];
+    }
+    const examplesHtml = displayExamples.length
+      ? `<p style="margin-top:6px;"><strong>Examples:</strong></p><ul style="margin-left:16px;font-size:0.8rem;">${displayExamples.map(e => `<li><span class="example-link" data-skill-id="${esc(s.id)}" data-example="${esc(String(e))}">${esc(String(e))}</span></li>`).join("")}</ul>`
+      : "";
+    const inputHint = displayExamples.length
+      ? `<p style="margin-top:4px;font-size:0.78rem;color:#64748b;">Click an example to try it →</p>`
       : "";
     return `
       <details class="skill-item">
@@ -562,14 +576,24 @@ function renderSkills(skills) {
           ${s.description ? `<p>${esc(s.description)}</p>` : ""}
           ${tags ? `<p style="margin-top:4px;">${tags}</p>` : ""}
           ${inModes ? `<p style="margin-top:6px;"><strong>Input:</strong> ${inModes}</p>` : ""}
-          ${outModes ? `<p><strong>Output:</strong> ${outModes}</p>` : ""}
           ${examplesHtml}
+          ${inputHint}
+          ${outModes ? `<p style="margin-top:6px;"><strong>Output:</strong> ${outModes}</p>` : ""}
           <pre class="skill-json">${esc(JSON.stringify(s, null, 2))}</pre>
         </div>
       </details>
     `;
   }).join("");
-  document.getElementById("skills-list").innerHTML = html;
+  const container = document.getElementById("skills-list");
+  container.innerHTML = html;
+  if (!container._hasExampleClickListener) {
+    container.addEventListener("click", function(e) {
+      const link = e.target.closest(".example-link");
+      if (!link) return;
+      useExample(link.dataset.skillId, link.dataset.example);
+    });
+    container._hasExampleClickListener = true;
+  }
 }
 
 function populateSkillSelect(skills) {
@@ -581,6 +605,61 @@ function populateSkillSelect(skills) {
   sel.innerHTML = skills.map(s =>
     `<option value="${esc(s.id)}">${esc(s.name || s.id)} (${esc(s.id)})</option>`
   ).join("");
+  if (!sel._hasSkillChangeListener) {
+    sel.addEventListener("change", () => fillExampleForSkill(sel.value));
+    sel._hasSkillChangeListener = true;
+  }
+  fillExampleForSkill(sel.value);
+}
+
+function fillExampleForSkill(skillId) {
+  if (!agentCard) return;
+  const skill = (agentCard.skills || []).find(s => s.id === skillId);
+  if (!skill) return;
+  const input = document.getElementById("message-input");
+  const examples = skill.examples || [];
+  const firstExample = examples[0] || sampleJsonForSkill(skillId);
+  input.value = "";
+  if (firstExample) {
+    input.placeholder = "e.g. " + String(firstExample);
+  } else {
+    input.placeholder = "Enter a message for " + (skill.name || skill.id);
+  }
+}
+
+function useExample(skillId, example) {
+  const sel = document.getElementById("skill-select");
+  sel.value = skillId;
+  document.getElementById("message-input").value = example;
+  document.querySelector(".main").scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// ── Schema helpers ─────────────────────────────────────────────────────────
+
+function sampleFromSchema(schema) {
+  if (!schema || !schema.properties) return null;
+  const obj = {};
+  for (const [key, prop] of Object.entries(schema.properties)) {
+    if ("default" in prop) {
+      obj[key] = prop["default"];
+    } else if (prop.type === "string") {
+      obj[key] = prop.description || key;
+    } else if (prop.type === "number" || prop.type === "integer") {
+      obj[key] = 0;
+    } else if (prop.type === "boolean") {
+      obj[key] = false;
+    } else {
+      obj[key] = key;
+    }
+  }
+  return obj;
+}
+
+function sampleJsonForSkill(skillId) {
+  const schema = inputSchemas[skillId];
+  if (!schema) return null;
+  const obj = sampleFromSchema(schema);
+  return obj ? JSON.stringify(obj, null, 2) : null;
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────
@@ -609,6 +688,7 @@ function buildMessageParams(skillId, text, contextId) {
   }
   return {
     message: {
+      messageId: generateId(),
       role: "user",
       parts,
       metadata: { skillId },
@@ -619,15 +699,19 @@ function buildMessageParams(skillId, text, contextId) {
 
 function nextId() { return rpcId++; }
 
+function escShellSingleQuote(s) {
+  return s.replace(/'/g, "'\\''");
+}
+
 function buildCurlCommand(body) {
-  const bodyStr = JSON.stringify(body).replace(/'/g, "'\\''");
+  const bodyStr = JSON.stringify(body);
   const token = authInput.value.trim();
-  let cmd = `curl -X POST '${AGENT_BASE}/' \\\n  -H 'Content-Type: application/json'`;
+  let cmd = `curl -X POST '${escShellSingleQuote(AGENT_BASE)}/' \\\n  -H 'Content-Type: application/json'`;
   if (token) {
     const bearer = token.toLowerCase().startsWith("bearer ") ? token : "Bearer " + token;
-    cmd += ` \\\n  -H 'Authorization: ${bearer}'`;
+    cmd += ` \\\n  -H 'Authorization: ${escShellSingleQuote(bearer)}'`;
   }
-  cmd += ` \\\n  -d '${bodyStr}'`;
+  cmd += ` \\\n  -d '${escShellSingleQuote(bodyStr)}'`;
   return cmd;
 }
 
@@ -637,7 +721,7 @@ function renderCurl(parentEl, body) {
   section.className = "curl-section";
   section.innerHTML = `
     <span class="curl-label">cURL</span>
-    <div class="curl-block"><code class="curl-cmd">${esc(cmd)}</code><button class="copy-btn">Copy</button></div>
+    <div class="curl-block"><pre class="curl-cmd" style="margin:0;font:inherit;color:inherit;white-space:pre-wrap;word-break:break-word;">${esc(cmd)}</pre><button class="copy-btn">Copy</button></div>
   `;
   parentEl.appendChild(section);
   section.querySelector(".copy-btn").onclick = function() {
@@ -743,26 +827,31 @@ function streamMessage() {
     const decoder = new TextDecoder();
     let buffer = "";
 
+    function parseSSEBlocks(raw) {
+      const blocks = raw.split("\n\n");
+      const remainder = blocks.pop();
+      for (const block of blocks) {
+        const lines = block.split("\n");
+        let eventType = "message";
+        let dataStr = "";
+        for (const line of lines) {
+          if (line.startsWith("event:")) eventType = line.slice(6).trim();
+          else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
+        }
+        if (dataStr) appendSSEEvent(eventType, dataStr);
+      }
+      return remainder;
+    }
+
     function readChunk() {
       reader.read().then(({ done, value }) => {
         if (done) {
+          if (buffer.trim()) parseSSEBlocks(buffer + "\n\n");
           setStatus("composer-status", "Stream complete.");
           return;
         }
         buffer += decoder.decode(value, { stream: true });
-        const blocks = buffer.split("\n\n");
-        buffer = blocks.pop();
-        blocks.forEach(block => {
-          const lines = block.split("\n");
-          let eventType = "message";
-          let dataStr = "";
-          for (const line of lines) {
-            if (line.startsWith("event:")) eventType = line.slice(6).trim();
-            else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
-          }
-          if (!dataStr) return;
-          appendSSEEvent(eventType, dataStr);
-        });
+        buffer = parseSSEBlocks(buffer);
         readChunk();
       }).catch(e => {
         setStatus("composer-status", "Stream error: " + e.message, true);

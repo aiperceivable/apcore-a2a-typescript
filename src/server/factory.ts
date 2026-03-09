@@ -192,7 +192,7 @@ export class A2AServerFactory {
 
     // Explorer UI
     if (opts.explorer) {
-      app.use(explorerPrefix, createExplorerRouter(agentCard));
+      app.use(explorerPrefix, createExplorerRouter(agentCard, { registry }));
     }
 
     // Health endpoint

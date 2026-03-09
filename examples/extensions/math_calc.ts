@@ -3,7 +3,7 @@
  */
 
 import { Type } from "@sinclair/typebox";
-import { DEFAULT_ANNOTATIONS, type ModuleAnnotations, type Context } from "apcore-js";
+import { DEFAULT_ANNOTATIONS, type ModuleAnnotations, type ModuleExample, type Context } from "apcore-js";
 
 const inputSchema = Type.Object({
   a: Type.Number({ description: "First operand" }),
@@ -36,6 +36,10 @@ export default {
   description: "Perform basic arithmetic: add, subtract, multiply, or divide",
   tags: ["math", "utility"],
   annotations,
+  examples: [
+    { title: '{"a": 3, "b": 5, "op": "add"}', inputs: { a: 3, b: 5, op: "add" }, output: { result: 8, expression: "3 + 5 = 8" } },
+    { title: '{"a": 10, "b": 4, "op": "div"}', inputs: { a: 10, b: 4, op: "div" }, output: { result: 2.5, expression: "10 / 4 = 2.5" } },
+  ] satisfies ModuleExample[],
 
   execute(inputs: Record<string, unknown>, _context: Context): Record<string, unknown> {
     const a = inputs.a as number;

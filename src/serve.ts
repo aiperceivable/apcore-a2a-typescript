@@ -94,7 +94,7 @@ export async function asyncServe(
   // Resolve metadata with fallbacks
   const projectConfig =
     ((registry.config as Record<string, unknown>)?.project as Record<string, unknown>) ?? {};
-  const resolvedName = opts.name ?? (projectConfig.name as string) ?? "apcore-agent";
+  const resolvedName = opts.name ?? (projectConfig.name as string) ?? "Apcore Agent";
   const resolvedVersion = opts.version ?? (projectConfig.version as string) ?? "0.0.0";
   const resolvedDescription =
     opts.description ??

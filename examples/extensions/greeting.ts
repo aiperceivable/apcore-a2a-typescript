@@ -3,7 +3,7 @@
  */
 
 import { Type } from "@sinclair/typebox";
-import { DEFAULT_ANNOTATIONS, type ModuleAnnotations, type Context } from "apcore-js";
+import { DEFAULT_ANNOTATIONS, type ModuleAnnotations, type ModuleExample, type Context } from "apcore-js";
 
 const inputSchema = Type.Object({
   name: Type.String({ description: "Name of the person to greet" }),
@@ -34,6 +34,10 @@ export default {
   description: "Generate a personalized greeting in different styles",
   tags: ["text", "fun"],
   annotations,
+  examples: [
+    { title: '{"name": "Alice", "style": "friendly"}', inputs: { name: "Alice", style: "friendly" }, output: { message: "Hey Alice! Great to see you!", timestamp: "2026-01-01T00:00:00.000Z" } },
+    { title: '{"name": "Bob", "style": "pirate"}', inputs: { name: "Bob", style: "pirate" }, output: { message: "Ahoy, Bob! Welcome aboard, matey!", timestamp: "2026-01-01T00:00:00.000Z" } },
+  ] satisfies ModuleExample[],
 
   execute(inputs: Record<string, unknown>, _context: Context): Record<string, unknown> {
     const name = inputs.name as string;
