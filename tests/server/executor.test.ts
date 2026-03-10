@@ -81,13 +81,18 @@ describe("ApCoreAgentExecutor", () => {
 
       await agent.execute(context as any, bus);
 
-      expect(bus.events).toHaveLength(2);
-      const artifact = bus.events[0] as TaskArtifactUpdateEvent;
+      // events[0] is the initial task creation event
+      expect(bus.events).toHaveLength(3);
+      const taskInit = bus.events[0] as any;
+      expect(taskInit.kind).toBe("task");
+      expect(taskInit.id).toBe("task-1");
+
+      const artifact = bus.events[1] as TaskArtifactUpdateEvent;
       expect(artifact.kind).toBe("artifact-update");
       expect(artifact.taskId).toBe("task-1");
       expect(artifact.lastChunk).toBe(true);
 
-      const status = bus.events[1] as TaskStatusUpdateEvent;
+      const status = bus.events[2] as TaskStatusUpdateEvent;
       expect(status.kind).toBe("status-update");
       expect(status.status.state).toBe("completed");
       expect(status.final).toBe(true);
@@ -107,8 +112,9 @@ describe("ApCoreAgentExecutor", () => {
 
       await agent.execute(context as any, bus);
 
-      expect(bus.events).toHaveLength(1);
-      const event = bus.events[0] as TaskStatusUpdateEvent;
+      // events[0] is the initial task event, events[1] is the failed status
+      expect(bus.events).toHaveLength(2);
+      const event = bus.events[1] as TaskStatusUpdateEvent;
       expect(event.status.state).toBe("failed");
       expect(event.status.message?.parts[0]).toEqual(
         expect.objectContaining({ text: expect.stringContaining("skillId") }),
@@ -127,7 +133,7 @@ describe("ApCoreAgentExecutor", () => {
       const bus = makeEventBus();
       await agent.execute(makeContext({ skillId: "missing-skill" }) as any, bus);
 
-      const event = bus.events[0] as TaskStatusUpdateEvent;
+      const event = bus.events[1] as TaskStatusUpdateEvent;
       expect(event.status.state).toBe("failed");
       expect(event.status.message?.parts[0]).toEqual(
         expect.objectContaining({ text: expect.stringContaining("Skill not found") }),
@@ -150,7 +156,7 @@ describe("ApCoreAgentExecutor", () => {
       const bus = makeEventBus();
       await agent.execute(makeContext({ skillId: "test" }) as any, bus);
 
-      const event = bus.events[0] as TaskStatusUpdateEvent;
+      const event = bus.events[1] as TaskStatusUpdateEvent;
       expect(event.status.state).toBe("failed");
       expect(event.status.message?.parts[0]).toEqual(
         expect.objectContaining({ text: expect.stringContaining("timed out") }),
@@ -170,7 +176,7 @@ describe("ApCoreAgentExecutor", () => {
       const bus = makeEventBus();
       await agent.execute(makeContext({ skillId: "test" }) as any, bus);
 
-      const event = bus.events[0] as TaskStatusUpdateEvent;
+      const event = bus.events[1] as TaskStatusUpdateEvent;
       expect(event.status.state).toBe("input-required");
       expect(event.final).toBe(false);
     });
@@ -186,7 +192,7 @@ describe("ApCoreAgentExecutor", () => {
       const bus = makeEventBus();
       await agent.execute(makeContext({ skillId: "test" }) as any, bus);
 
-      const event = bus.events[0] as TaskStatusUpdateEvent;
+      const event = bus.events[1] as TaskStatusUpdateEvent;
       expect(event.status.state).toBe("failed");
       expect(event.status.message?.parts[0]).toEqual(
         expect.objectContaining({ text: "Internal server error" }),

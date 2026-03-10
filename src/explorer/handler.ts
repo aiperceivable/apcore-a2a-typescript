@@ -39,8 +39,8 @@ export function createExplorerRouter(
       for (const skill of (agentCard.skills ?? []) as Array<{ id?: string }>) {
         const sid = skill.id;
         if (!sid) continue;
-        const desc = registry.getDefinition(sid) as { input_schema?: unknown } | null;
-        const schema = desc?.input_schema;
+        const desc = registry.getDefinition(sid) as { input_schema?: unknown; inputSchema?: unknown } | null;
+        const schema = desc?.input_schema ?? desc?.inputSchema;
         if (schema && typeof schema === "object") {
           schemas[sid] = schema;
         }

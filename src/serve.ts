@@ -67,21 +67,47 @@ export function resolveRegistryAndExecutor(
   if (typeof o.list === "function" && typeof o.getDefinition === "function") {
     const registry = o as unknown as RegistryWithConfig;
     const nestedExecutor = (o as Record<string, unknown>).executor as ExecutorLike | undefined;
-    const executor =
-      typeof nestedExecutor?.callAsync === "function"
-        ? nestedExecutor
-        : (registry as unknown as ExecutorLike);
-    return { registry, executor };
+    if (typeof nestedExecutor?.callAsync === "function") {
+      return { registry, executor: nestedExecutor };
+    }
+    // Registry only — return as-is; asyncServe will create the Executor
+    return { registry, executor: registry as unknown as ExecutorLike };
   }
 
   throw new TypeError("Expected apcore Registry or Executor");
+}
+
+/**
+ * If the resolved executor doesn't have callAsync, attempt to create
+ * an apcore Executor from the registry automatically.
+ */
+async function ensureExecutor(
+  resolved: { registry: RegistryWithConfig; executor: ExecutorLike },
+): Promise<{ registry: RegistryWithConfig; executor: ExecutorLike }> {
+  if (typeof resolved.executor.callAsync === "function") {
+    return resolved;
+  }
+  // The "executor" is actually the registry (no callAsync) — create a real Executor
+  try {
+    const { Executor } = await import("apcore-js");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const executor = Executor.fromRegistry(resolved.registry as any) as unknown as ExecutorLike;
+    return { registry: resolved.registry, executor };
+  } catch {
+    throw new TypeError(
+      "Registry has no callAsync method and apcore-js Executor could not be created. " +
+        "Pass an Executor instance instead of a bare Registry.",
+    );
+  }
 }
 
 export async function asyncServe(
   registryOrExecutor: unknown,
   opts: AsyncServeOptions = {},
 ): Promise<Express> {
-  const { registry, executor } = resolveRegistryAndExecutor(registryOrExecutor);
+  const { registry, executor } = await ensureExecutor(
+    resolveRegistryAndExecutor(registryOrExecutor),
+  );
 
   // Validate registry has at least one module
   const modules = registry.list();

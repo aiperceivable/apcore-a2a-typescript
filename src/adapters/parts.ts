@@ -20,7 +20,7 @@ export class PartConverter {
     const part = parts[0];
 
     if (part.kind === "text") {
-      const inputSchema = descriptor?.input_schema ?? null;
+      const inputSchema = descriptor?.input_schema ?? descriptor?.inputSchema ?? null;
       const rootType = this.schemaConverter.detectRootType(inputSchema);
       if (rootType === "object") {
         try {

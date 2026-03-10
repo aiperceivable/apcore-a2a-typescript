@@ -66,7 +66,17 @@ export class ApCoreAgentExecutor implements AgentExecutor {
   }
 
   async execute(context: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
-    // 1. Get skillId from message metadata
+    // 1. Initialize task in the event bus so ResultManager can track it
+    const contextId = context.contextId || context.taskId;
+    eventBus.publish({
+      kind: "task",
+      id: context.taskId,
+      contextId,
+      status: { state: "submitted", timestamp: utcNow() },
+      history: [],
+    } as unknown as TaskStatusUpdateEvent);
+
+    // 2. Get skillId from message metadata
     const metadata = context.userMessage?.metadata ?? {};
     const skillId = metadata.skillId as string | undefined;
     if (!skillId) {
@@ -75,7 +85,7 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       return;
     }
 
-    // 2. Validate skill exists in registry
+    // 3. Validate skill exists in registry
     if (this.registry) {
       try {
         const known = this.registry.list();
@@ -89,7 +99,7 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       }
     }
 
-    // 3. Parse Parts -> apcore input
+    // 4. Parse Parts -> apcore input
     const parts: Part[] = context.userMessage?.parts ?? [];
     let descriptor = null;
     if (this.registry) {
@@ -109,7 +119,7 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       return;
     }
 
-    // 4. Build apcore context with identity
+    // 5. Build apcore context with identity
     const identity = getAuthIdentity();
     let apcoreCtx: unknown = undefined;
     try {
@@ -119,7 +129,7 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       // apcore-js Context not available in this environment
     }
 
-    // 5. Execute via executor.callAsync() with timeout
+    // 6. Execute via executor.callAsync() with timeout
     this.notify("submitted", "working");
     let output: Record<string, unknown>;
     try {
@@ -140,14 +150,14 @@ export class ApCoreAgentExecutor implements AgentExecutor {
         this.publishInputRequired(context, eventBus, String(e));
         return;
       }
+      console.error(`Execution failed for task ${context.taskId} skill ${skillId}:`, e);
       this.notify("working", "failed");
       this.publishFailed(context, eventBus, "Internal server error");
       return;
     }
 
-    // 6. Publish artifact + completed
+    // 7. Publish artifact + completed
     const artifact = this.partConverter.outputToParts(output, context.taskId);
-    const contextId = context.contextId || context.taskId;
 
     eventBus.publish({
       kind: "artifact-update",

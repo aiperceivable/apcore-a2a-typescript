@@ -2,9 +2,12 @@ import type { AgentSkill } from "@a2a-js/sdk";
 
 export interface ModuleDescriptor {
   module_id?: string;
+  moduleId?: string;
   description?: string;
   input_schema?: Record<string, unknown>;
+  inputSchema?: Record<string, unknown>;
   output_schema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
   tags?: string[];
   examples?: Array<{ title?: string }>;
   annotations?: Record<string, unknown>;
@@ -15,7 +18,7 @@ export class SkillMapper {
     const description = descriptor.description;
     if (!description) return null;
 
-    const id = descriptor.module_id ?? moduleId;
+    const id = descriptor.module_id ?? descriptor.moduleId ?? moduleId;
     if (!id) return null;
     return {
       id,
@@ -36,14 +39,14 @@ export class SkillMapper {
   }
 
   private computeInputModes(descriptor: ModuleDescriptor): string[] {
-    const schema = descriptor.input_schema;
+    const schema = descriptor.input_schema ?? descriptor.inputSchema;
     if (!schema) return ["text/plain"];
     if (schema.type === "string") return ["application/json", "text/plain"];
     return ["application/json"];
   }
 
   private computeOutputModes(descriptor: ModuleDescriptor): string[] {
-    const schema = descriptor.output_schema;
+    const schema = descriptor.output_schema ?? descriptor.outputSchema;
     if (!schema) return ["text/plain"];
     return ["application/json"];
   }
