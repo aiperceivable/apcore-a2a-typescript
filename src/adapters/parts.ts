@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import type { Artifact, Part } from "@a2a-js/sdk";
 import { SchemaConverter } from "./schema.js";
 import type { ModuleDescriptor } from "./skill-mapper.js";
@@ -44,7 +45,7 @@ export class PartConverter {
   }
 
   outputToParts(output: unknown, taskId?: string): Artifact {
-    const artifactId = `art-${taskId || crypto.randomUUID()}`;
+    const artifactId = `art-${taskId || uuidv4()}`;
 
     if (output === null || output === undefined) {
       return { artifactId, parts: [] };

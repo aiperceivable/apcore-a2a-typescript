@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import { AgentCardFetcher } from "./card-fetcher.js";
 import {
   A2AConnectionError,
@@ -87,7 +88,7 @@ export class A2AClient {
     if (opts?.contextId) params.contextId = opts.contextId;
     const body = {
       jsonrpc: "2.0",
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       method: "message/stream",
       params,
     };
@@ -151,7 +152,7 @@ export class A2AClient {
   ): Promise<Record<string, unknown>> {
     const body = {
       jsonrpc: "2.0",
-      id: crypto.randomUUID(),
+      id: uuidv4(),
       method,
       params,
     };

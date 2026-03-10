@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from "uuid";
 import type {
   TaskStatusUpdateEvent,
   TaskArtifactUpdateEvent,
@@ -20,7 +21,7 @@ function utcNow(): string {
 function textMessage(text: string): Message {
   return {
     kind: "message",
-    messageId: crypto.randomUUID(),
+    messageId: uuidv4(),
     role: "agent",
     parts: [{ kind: "text", text }],
   };
