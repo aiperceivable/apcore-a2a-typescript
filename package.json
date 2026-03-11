@@ -1,6 +1,6 @@
 {
   "name": "apcore-a2a",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Automatic A2A Protocol Adapter for apcore Module Registry",
   "type": "module",
   "main": "./dist/index.js",

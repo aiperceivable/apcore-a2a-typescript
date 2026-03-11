@@ -176,7 +176,22 @@ export function serve(
     .then((app) => {
       const server = http.createServer(app);
 
+      // Track open connections so we can destroy them on shutdown
+      const connections = new Set<import("net").Socket>();
+      server.on("connection", (conn) => {
+        connections.add(conn);
+        conn.on("close", () => connections.delete(conn));
+      });
+
+      let shuttingDown = false;
       const shutdown = () => {
+        if (shuttingDown) return;
+        shuttingDown = true;
+
+        // Destroy idle keep-alive connections so server.close() can finish
+        for (const conn of connections) {
+          conn.destroy();
+        }
         server.close(() => process.exit(0));
         setTimeout(() => process.exit(1), (opts.shutdownTimeout ?? 30) * 1000);
       };
