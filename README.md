@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/aipartnerup/apcore-a2a/main/apcore-a2a-logo.svg" alt="apcore-a2a logo" width="200"/>
+  <img src="https://raw.githubusercontent.com/aiperceivable/apcore-a2a/main/apcore-a2a-logo.svg" alt="apcore-a2a logo" width="200"/>
 </div>
 
 # apcore-a2a (TypeScript)
@@ -7,11 +7,11 @@
 [![npm](https://img.shields.io/npm/v/apcore-a2a)](https://www.npmjs.com/package/apcore-a2a)
 [![Node.js](https://img.shields.io/node/v/apcore-a2a)](https://www.npmjs.com/package/apcore-a2a)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)](https://github.com/aipartnerup/apcore-a2a-typescript)
+[![Coverage](https://img.shields.io/badge/coverage-92%25-brightgreen)](https://github.com/aiperceivable/apcore-a2a-typescript)
 
 ## What is apcore-a2a?
 
-**apcore-a2a** is the [A2A (Agent-to-Agent)](https://google.github.io/A2A/) protocol adapter for the [apcore](https://github.com/aipartnerup/apcore-typescript) ecosystem.
+**apcore-a2a** is the [A2A (Agent-to-Agent)](https://google.github.io/A2A/) protocol adapter for the [apcore](https://github.com/aiperceivable/apcore-typescript) ecosystem.
 
 It solves a common problem: **you've built AI capabilities with apcore modules, but you need them to talk to other AI agents over a standard protocol.** apcore-a2a bridges that gap — it reads your existing module metadata (schemas, descriptions, examples) and automatically exposes them as a standards-compliant A2A server. No hand-written Agent Cards, no JSON-RPC boilerplate, no manual task lifecycle management.
 
@@ -19,7 +19,7 @@ It solves a common problem: **you've built AI capabilities with apcore modules, 
 
 Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express 5](https://expressjs.com/).
 
-> **Also available in Python:** [`apcore-a2a` (PyPI)](https://github.com/aipartnerup/apcore-a2a-python)
+> **Also available in Python:** [`apcore-a2a` (PyPI)](https://github.com/aiperceivable/apcore-a2a-python)
 
 ## Features
 
@@ -233,7 +233,7 @@ See [`examples/README.md`](examples/README.md) for details on class-based vs pro
 ### Contributing
 
 ```bash
-git clone https://github.com/aipartnerup/apcore-a2a-typescript.git
+git clone https://github.com/aiperceivable/apcore-a2a-typescript.git
 cd apcore-a2a-typescript
 npm install
 npm test
@@ -241,9 +241,9 @@ npm test
 
 ## Documentation
 
-- [Product Requirements (PRD)](https://github.com/aipartnerup/apcore-a2a/blob/main/docs/apcore-a2a/prd.md)
-- [Technical Design](https://github.com/aipartnerup/apcore-a2a/blob/main/docs/apcore-a2a/tech-design.md)
-- [Software Requirements (SRS)](https://github.com/aipartnerup/apcore-a2a/blob/main/docs/apcore-a2a/srs.md)
+- [Product Requirements (PRD)](https://github.com/aiperceivable/apcore-a2a/blob/main/docs/apcore-a2a/prd.md)
+- [Technical Design](https://github.com/aiperceivable/apcore-a2a/blob/main/docs/apcore-a2a/tech-design.md)
+- [Software Requirements (SRS)](https://github.com/aiperceivable/apcore-a2a/blob/main/docs/apcore-a2a/srs.md)
 
 ## License
 

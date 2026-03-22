@@ -1,6 +1,6 @@
 {
   "name": "apcore-a2a",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Automatic A2A Protocol Adapter for apcore Module Registry",
   "type": "module",
   "main": "./dist/index.js",
@@ -56,11 +56,11 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aipartnerup/apcore-a2a-typescript.git"
+    "url": "https://github.com/aiperceivable/apcore-a2a-typescript.git"
   },
-  "homepage": "https://aipartnerup.com",
+  "homepage": "https://aiperceivable.com",
   "bugs": {
-    "url": "https://github.com/aipartnerup/apcore-a2a-typescript/issues"
+    "url": "https://github.com/aiperceivable/apcore-a2a-typescript/issues"
   },
   "keywords": [
     "apcore",
