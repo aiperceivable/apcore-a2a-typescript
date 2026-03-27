@@ -14,7 +14,7 @@ describe("resolveAuthKey", () => {
     } catch {
       // ignore
     }
-    delete process.env.JWT_SECRET;
+    delete process.env.APCORE_JWT_SECRET;
   });
 
   it("reads from file when path exists", () => {
@@ -31,8 +31,8 @@ describe("resolveAuthKey", () => {
     expect(result).toBe("literal-secret");
   });
 
-  it("falls back to JWT_SECRET env var when no key provided", () => {
-    process.env.JWT_SECRET = "env-secret";
+  it("falls back to APCORE_JWT_SECRET env var when no key provided", () => {
+    process.env.APCORE_JWT_SECRET = "env-secret";
     const result = resolveAuthKey();
     expect(result).toBe("env-secret");
   });

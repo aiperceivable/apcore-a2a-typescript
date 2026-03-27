@@ -24,8 +24,8 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 ## Features
 
 - **One-call server** — launch a compliant A2A server with `serve(registry)`
-- **Automatic Agent Card** — `/.well-known/agent-card.json` generated from module metadata
-- **Skill mapping** — apcore modules become A2A Skills with names, descriptions, tags, and examples
+- **Automatic Agent Card** — `/.well-known/agent.json` generated from module metadata
+- **Skill mapping** — apcore modules become A2A Skills with names, descriptions, tags, and examples; `metadata.display.a2a` overrides surface-facing fields (§5.13)
 - **Full task lifecycle** — submitted, working, completed, failed, canceled, input-required
 - **SSE streaming** — `message/stream` with real-time status and artifact updates
 - **JWT authentication** — tokens bridged to apcore's Identity context
@@ -39,7 +39,7 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 ## Requirements
 
 - Node.js >= 18.0.0
-- `apcore-js` >= 0.9.0
+- `apcore-js` >= 0.14.0
 
 ---
 
@@ -64,7 +64,7 @@ const registry = new Registry({ extensionsDir: "./extensions" });
 serve(registry); // Starts on http://0.0.0.0:8000
 ```
 
-Your agent is now live at `http://localhost:8000/.well-known/agent-card.json`.
+Your agent is now live at `http://localhost:8000/.well-known/agent.json`.
 
 ### CLI (zero-code)
 
@@ -209,7 +209,10 @@ apcore Registry
 | A2A Concept    | apcore Mapping                            |
 | -------------- | ----------------------------------------- |
 | **Agent Card** | Derived from Registry configuration       |
-| **Skill**      | Maps 1:1 to an apcore Module              |
+| **Skill id**   | `module_id`                               |
+| **Skill name** | `metadata.display.a2a.alias` or humanized `module_id` |
+| **Skill desc** | `metadata.display.a2a.description` or `module.description` |
+| **Skill tags** | `metadata.display.tags` or `module.tags`  |
 | **Task**       | Managed execution of `Executor.callAsync()` |
 | **Streaming**  | Wrapped `Executor.stream()` via SSE       |
 | **Security**   | Bridged to apcore's `Identity` context    |

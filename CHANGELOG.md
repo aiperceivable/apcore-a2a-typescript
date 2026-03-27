@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-27
+
+### Added
+
+- **Display overlay in `SkillMapper`** (§5.13) — `toSkill()` reads `metadata.display.a2a` for skill name, description, and tags when present.
+  - Skill name: `metadata.display.a2a.alias` → `metadata.display.alias` → humanized `module_id`.
+  - Description: `metadata.display.a2a.description` → `metadata.display.description` → `descriptor.description`.
+  - Guidance: appended to description if present in `a2a.guidance` or `display.guidance`.
+  - Tags: `metadata.display.tags` → `descriptor.tags`.
+- `metadata` field added to `ModuleDescriptor` interface.
+
+### Changed
+
+- **`apcore-js` bumped from `^0.9.0` to `^0.14.0`**.
+- **Well-known endpoint** aligned to `/.well-known/agent.json` (was `agent-card.json`), matching Python SDK and A2A spec.
+- **CLI `--execution-timeout`** now accepts seconds (was milliseconds) for cross-language consistency with Python SDK.
+- **Environment variables** renamed with `APCORE_` prefix: `JWT_SECRET` → `APCORE_JWT_SECRET`, `A2A_EXECUTION_TIMEOUT` → `APCORE_A2A_EXECUTION_TIMEOUT`.
+
+### Tests
+
+- 13 new `SkillMapper` display overlay tests including empty-string fallthrough parity with Python.
+
+---
+
 ## [0.2.2] - 2026-03-22
 
 ### Changed

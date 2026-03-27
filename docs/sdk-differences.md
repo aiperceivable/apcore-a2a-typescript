@@ -3,8 +3,7 @@
 Critical differences between `a2a-sdk` (Python) and `@a2a-js/sdk` (TypeScript) that affect the port.
 
 ## Agent Card Path
-- Python: `/.well-known/agent.json`
-- TypeScript: `/.well-known/agent-card.json`
+- Both: `/.well-known/agent.json`
 
 ## TaskStore Interface
 - Python: `save(task)`, `get(task_id)`, `delete(task_id)`
@@ -28,7 +27,7 @@ Health probe uses `load("__health_probe__")` instead of `get("__health_probe__")
 - Python: `A2AStarletteApplication.build(routes, middleware)` — builds full Starlette app
 - TypeScript: Composable Express middlewares:
   - `jsonRpcHandler({ requestHandler, userBuilder })` — POST /
-  - `agentCardHandler({ agentCardProvider })` — GET /.well-known/agent-card.json
+  - `agentCardHandler({ agentCardProvider })` — GET /.well-known/agent.json
   - Build Express app manually with `express()`
 
 ## DefaultRequestHandler Constructor
@@ -50,5 +49,4 @@ Note: TypeScript constructor requires `agentCard` as first param.
 - TypeScript: Express middleware (req, res, next)
 
 ## Exempt Paths for Auth
-- Python: `/.well-known/agent.json`
-- TypeScript: `/.well-known/agent-card.json`
+- Both: `/.well-known/agent.json`, `/health`, `/metrics`

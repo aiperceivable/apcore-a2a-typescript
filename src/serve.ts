@@ -6,7 +6,7 @@ import type { Authenticator } from "./auth/types.js";
 import type { TaskStore } from "@a2a-js/sdk/server";
 
 const DEFAULT_EXECUTION_TIMEOUT = parseInt(
-  process.env.A2A_EXECUTION_TIMEOUT ?? "300000",
+  process.env.APCORE_A2A_EXECUTION_TIMEOUT ?? "300000",
   10,
 );
 

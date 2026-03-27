@@ -28,7 +28,7 @@ Port of `apcore_a2a/client/card_fetcher.py`
 
 **Class: `AgentCardFetcher`**
 - Constructor: `(baseUrl: string, opts?: { ttl?: number; headers?: Record<string,string> })`
-- `fetch(): Promise<Record<string, unknown>>` — GET `/.well-known/agent-card.json` with TTL caching
+- `fetch(): Promise<Record<string, unknown>>` — GET `/.well-known/agent.json` with TTL caching
 - Uses native `fetch()` (Node.js 18+)
 - Throws `A2ADiscoveryError` on HTTP error or JSON parse failure
 

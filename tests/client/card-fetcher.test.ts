@@ -3,7 +3,7 @@ import { AgentCardFetcher } from "../../src/client/card-fetcher.js";
 import { A2ADiscoveryError } from "../../src/client/exceptions.js";
 
 const BASE_URL = "http://localhost:3000";
-const CARD_URL = `${BASE_URL}/.well-known/agent-card.json`;
+const CARD_URL = `${BASE_URL}/.well-known/agent.json`;
 
 const mockCard = { name: "TestAgent", skills: [] };
 

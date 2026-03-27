@@ -10,7 +10,7 @@ export interface AuthMiddlewareOptions {
 }
 
 const DEFAULT_EXEMPT_PATHS = new Set([
-  "/.well-known/agent-card.json",
+  "/.well-known/agent.json",
   "/health",
   "/metrics",
 ]);

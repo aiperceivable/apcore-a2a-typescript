@@ -58,7 +58,7 @@ describe("createAuthMiddleware", () => {
       const authenticator = makeAuthenticator(null);
       const middleware = createAuthMiddleware({ authenticator });
 
-      for (const path of ["/.well-known/agent-card.json", "/health", "/metrics"]) {
+      for (const path of ["/.well-known/agent.json", "/health", "/metrics"]) {
         const req = makeReq(path);
         const res = makeRes();
         middleware(req, res, next);

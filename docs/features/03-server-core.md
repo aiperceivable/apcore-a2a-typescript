@@ -67,7 +67,7 @@ create(registry, executor, opts): { app: Express; agentCard: AgentCard }
 5. Build DefaultRequestHandler from @a2a-js/sdk
 6. Build Express app using `@a2a-js/sdk/server/express` utilities:
    - `jsonRpcHandler()` — JSON-RPC 2.0 endpoint at POST /
-   - `agentCardHandler()` — GET /.well-known/agent-card.json
+   - `agentCardHandler()` — GET /.well-known/agent.json
 7. Add custom routes:
    - GET /health — task store probe, module count, uptime, version
    - GET /metrics (optional) — task counters

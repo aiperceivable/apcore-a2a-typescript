@@ -123,6 +123,149 @@ describe("SkillMapper", () => {
     });
   });
 
+  describe("display overlay (§5.13)", () => {
+    it("uses a2a alias as skill name", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        metadata: { display: { a2a: { alias: "Smart Resize" } } },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.name).toBe("Smart Resize");
+    });
+
+    it("falls back to display.alias when a2a alias is absent", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        metadata: { display: { alias: "Global Alias" } },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.name).toBe("Global Alias");
+    });
+
+    it("falls back to humanized module_id when no alias", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        metadata: { display: {} },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.name).toBe("Image Resize");
+    });
+
+    it("uses a2a description", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        metadata: { display: { a2a: { description: "A2A-specific description" } } },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.description).toBe("A2A-specific description");
+    });
+
+    it("falls back to display.description when a2a description is absent", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        metadata: { display: { description: "Display description" } },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.description).toBe("Display description");
+    });
+
+    it("appends guidance to description", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        metadata: { display: { a2a: { guidance: "Use 1024x1024 for best results" } } },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.description).toBe("Resize an image\n\nGuidance: Use 1024x1024 for best results");
+    });
+
+    it("uses display.tags over descriptor.tags", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        tags: ["original"],
+        metadata: { display: { tags: ["overlay-tag-1", "overlay-tag-2"] } },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.tags).toEqual(["overlay-tag-1", "overlay-tag-2"]);
+    });
+
+    it("falls back to descriptor.tags when display.tags is empty", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        tags: ["fallback"],
+        metadata: { display: { tags: [] } },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.tags).toEqual(["fallback"]);
+    });
+
+    it("a2a-specific override wins over global display", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        metadata: {
+          display: {
+            alias: "Global Alias",
+            description: "Global Desc",
+            a2a: { alias: "A2A Alias", description: "A2A Desc" },
+          },
+        },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.name).toBe("A2A Alias");
+      expect(skill!.description).toBe("A2A Desc");
+    });
+
+    it("treats empty-string alias as absent (falls through)", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        metadata: { display: { a2a: { alias: "" }, alias: "" } },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.name).toBe("Image Resize");
+    });
+
+    it("treats empty-string description as absent (falls through)", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        metadata: { display: { a2a: { description: "" }, description: "" } },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.description).toBe("Resize an image");
+    });
+
+    it("does not append empty-string guidance", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        metadata: { display: { a2a: { guidance: "" } } },
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.description).toBe("Resize an image");
+    });
+
+    it("falls back to scanner values when no overlay present", () => {
+      const descriptor: ModuleDescriptor = {
+        module_id: "image.resize",
+        description: "Resize an image",
+        tags: ["image"],
+      };
+      const skill = mapper.toSkill(descriptor);
+      expect(skill!.name).toBe("Image Resize");
+      expect(skill!.description).toBe("Resize an image");
+      expect(skill!.tags).toEqual(["image"]);
+    });
+  });
+
   describe("buildExamples", () => {
     it("extracts titles from examples", () => {
       const descriptor: ModuleDescriptor = {

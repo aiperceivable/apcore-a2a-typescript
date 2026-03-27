@@ -23,13 +23,13 @@ Options:
   --version-str <string>     Agent version
   --url <string>             Public URL
   --auth-type <type>         Auth type: bearer
-  --auth-key <key>           JWT secret key (literal, file path, or JWT_SECRET env)
+  --auth-key <key>           JWT secret key (literal, file path, or APCORE_JWT_SECRET env)
   --auth-issuer <string>     JWT issuer
   --auth-audience <string>   JWT audience
   --push-notifications       Enable push notifications
   --explorer                 Enable explorer UI
   --cors-origins <origins>   Comma-separated CORS origins
-  --execution-timeout <ms>   Execution timeout in ms (default: 300000)
+  --execution-timeout <sec>   Execution timeout in seconds (default: 300)
   --log-level <level>        Log level: debug, info, warning, error
   --metrics                  Enable metrics endpoint
   --version                  Show version
@@ -53,7 +53,7 @@ export function resolveAuthKey(authKey?: string): string | undefined {
     }
     return authKey;
   }
-  return process.env.JWT_SECRET;
+  return process.env.APCORE_JWT_SECRET;
 }
 
 export async function main(): Promise<void> {
@@ -75,7 +75,7 @@ export async function main(): Promise<void> {
         "push-notifications": { type: "boolean", default: false },
         explorer: { type: "boolean", default: false },
         "cors-origins": { type: "string" },
-        "execution-timeout": { type: "string", default: "300000" },
+        "execution-timeout": { type: "string", default: "300" },
         "log-level": { type: "string", default: "info" },
         metrics: { type: "boolean", default: false },
         version: { type: "boolean", default: false },
@@ -177,7 +177,7 @@ async function runServe(
     auth,
     explorer: !!values.explorer,
     corsOrigins,
-    executionTimeout: parseInt((values["execution-timeout"] as string) ?? "300000", 10),
+    executionTimeout: parseInt((values["execution-timeout"] as string) ?? "300", 10) * 1000,
     logLevel: values["log-level"] as string | undefined,
     metrics: !!values.metrics,
   });

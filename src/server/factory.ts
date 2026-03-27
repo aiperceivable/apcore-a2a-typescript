@@ -177,7 +177,7 @@ export class A2AServerFactory {
 
     // Agent card endpoint
     app.get(
-      "/.well-known/agent-card.json",
+      "/.well-known/agent.json",
       agentCardHandler({ agentCardProvider: requestHandler }),
     );
 

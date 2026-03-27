@@ -8,7 +8,7 @@ export class AgentCardFetcher {
   private cachedAt = 0;
 
   constructor(baseUrl: string, opts?: { ttl?: number; headers?: Record<string, string> }) {
-    this.url = `${baseUrl}/.well-known/agent-card.json`;
+    this.url = `${baseUrl}/.well-known/agent.json`;
     this.ttl = opts?.ttl ?? 300;
     this.headers = opts?.headers ?? {};
   }

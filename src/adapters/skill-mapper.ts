@@ -11,6 +11,7 @@ export interface ModuleDescriptor {
   tags?: string[];
   examples?: Array<{ title?: string }>;
   annotations?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 export class SkillMapper {
@@ -20,11 +21,36 @@ export class SkillMapper {
 
     const id = descriptor.module_id ?? descriptor.moduleId ?? moduleId;
     if (!id) return null;
+
+    // Resolve display overlay fields (§5.13)
+    const display = (descriptor.metadata?.display as Record<string, unknown>) ?? {};
+    const a2aDisplay = (display.a2a as Record<string, unknown>) ?? {};
+
+    const skillName: string =
+      (a2aDisplay.alias as string) ||
+      (display.alias as string) ||
+      this.humanizeModuleId(id);
+
+    let skillDescription: string =
+      (a2aDisplay.description as string) ||
+      (display.description as string) ||
+      description;
+
+    const guidance = (a2aDisplay.guidance as string) || (display.guidance as string);
+    if (guidance) {
+      skillDescription = `${skillDescription}\n\nGuidance: ${guidance}`;
+    }
+
+    const resolvedTags: string[] =
+      (display.tags as string[])?.length
+        ? [...(display.tags as string[])]
+        : [...(descriptor.tags ?? [])];
+
     return {
       id,
-      name: this.humanizeModuleId(id),
-      description,
-      tags: [...(descriptor.tags ?? [])],
+      name: skillName,
+      description: skillDescription,
+      tags: resolvedTags,
       inputModes: this.computeInputModes(descriptor),
       outputModes: this.computeOutputModes(descriptor),
       examples: this.buildExamples(descriptor),
