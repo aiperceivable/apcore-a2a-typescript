@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-31
+
+### Added
+
+- **Error Formatter Registry** (§8.8) — `ErrorMapper` registers with `ErrorFormatterRegistry.register("a2a", ...)` at module load, making the A2A error formatter discoverable by the ecosystem (feature-detected for backward compatibility with apcore-js 0.14.x).
+- **Config Bus namespace** (§9.13) — registers the `apcore-a2a` namespace with env prefix `APCORE_A2A` and defaults for `execution_timeout`, `cors_origins`, `explorer`, `metrics`, `push_notifications`.
+- **New error codes** in `ErrorMapper` — `MODULE_DISABLED` (→ "Module is currently disabled"), `CONFIG_NAMESPACE_DUPLICATE`, `CONFIG_MOUNT_ERROR`, `CONFIG_BIND_ERROR` (→ "Configuration error").
+- **`format()` method** on `ErrorMapper` — implements the `ErrorFormatter` interface, delegating to `toJsonRpcError()`.
+- **`pushNotifications`** option added to `A2AServerCreateOptions` and wired into capabilities.
+- **`agentCard`** getter on `A2AClient` — equivalent to Python's `agent_card` async property.
+- **`VERSION` constant** exported from top-level `index.ts`.
+- **Top-level re-exports** — `AgentCardBuilder`, `SkillMapper`, `SchemaConverter`, `ErrorMapper`, `PartConverter`, `A2AServerFactory`, `ApCoreAgentExecutor`, `createAuthMiddleware`, `authIdentityStore`, `getAuthIdentity` now exported from `"apcore-a2a"`.
+- 6 new tests for new error codes and `format()` method.
+
+### Changed
+
+- **`apcore-js` dependency** bumped from `^0.14.0` to `^0.15.1`.
+- **Env prefix** — `APCORE__A2A` (double underscore) → `APCORE_A2A` (single underscore), per apcore 0.15.1 convention simplification.
+- **`ErrorMapper.sanitizeMessage`** changed from public to private, aligning with Python SDK and spec.
+
+---
+
 ## [0.3.0] - 2026-03-27
 
 ### Added

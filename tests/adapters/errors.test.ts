@@ -74,6 +74,34 @@ describe("ErrorMapper", () => {
       expect(result.message).toBe("Invalid input: Missing field name");
     });
 
+    it("maps MODULE_DISABLED to -32603", () => {
+      const err = createApcoreError("MODULE_DISABLED", "Module foo is disabled");
+      const result = mapper.toJsonRpcError(err);
+      expect(result.code).toBe(-32603);
+      expect(result.message).toBe("Module is currently disabled");
+    });
+
+    it("maps CONFIG_NAMESPACE_DUPLICATE to -32603", () => {
+      const err = createApcoreError("CONFIG_NAMESPACE_DUPLICATE", "Namespace already registered");
+      const result = mapper.toJsonRpcError(err);
+      expect(result.code).toBe(-32603);
+      expect(result.message).toBe("Configuration error");
+    });
+
+    it("maps CONFIG_MOUNT_ERROR to -32603", () => {
+      const err = createApcoreError("CONFIG_MOUNT_ERROR", "Mount failed");
+      const result = mapper.toJsonRpcError(err);
+      expect(result.code).toBe(-32603);
+      expect(result.message).toBe("Configuration error");
+    });
+
+    it("maps CONFIG_BIND_ERROR to -32603", () => {
+      const err = createApcoreError("CONFIG_BIND_ERROR", "Bind failed");
+      const result = mapper.toJsonRpcError(err);
+      expect(result.code).toBe(-32603);
+      expect(result.message).toBe("Configuration error");
+    });
+
     it("maps unknown apcore code to -32603", () => {
       const err = createApcoreError("UNKNOWN_ERROR", "Something");
       const result = mapper.toJsonRpcError(err);
@@ -94,22 +122,44 @@ describe("ErrorMapper", () => {
     });
   });
 
-  describe("sanitizeMessage", () => {
-    it("strips Unix absolute paths", () => {
-      expect(mapper.sanitizeMessage("Error at /home/user/file.py line 10")).toBe("Error at line 10");
+  describe("format", () => {
+    it("delegates to toJsonRpcError", () => {
+      const err = createApcoreError("MODULE_NOT_FOUND", "Module not found: foo");
+      const result = mapper.format(err);
+      expect(result).toEqual({ code: -32601, message: expect.stringContaining("Module not found") });
     });
 
-    it("strips tilde paths", () => {
-      expect(mapper.sanitizeMessage("Error at ~/project/file.ts")).toBe("Error at");
+    it("accepts optional context parameter", () => {
+      const err = new Error("generic");
+      const result = mapper.format(err, { some: "context" });
+      expect(result).toEqual({ code: -32603, message: "Internal server error" });
+    });
+  });
+
+  describe("message sanitization (via toJsonRpcError)", () => {
+    it("strips Unix absolute paths from error messages", () => {
+      const err = createApcoreError("MODULE_NOT_FOUND", "Error at /home/user/file.py line 10");
+      const result = mapper.toJsonRpcError(err);
+      expect(result.message).toBe("Error at line 10");
     });
 
-    it("truncates to 500 characters", () => {
+    it("strips tilde paths from error messages", () => {
+      const err = createApcoreError("MODULE_NOT_FOUND", "Error at ~/project/file.ts");
+      const result = mapper.toJsonRpcError(err);
+      expect(result.message).toBe("Error at");
+    });
+
+    it("truncates long messages to 500 characters", () => {
       const long = "x".repeat(600);
-      expect(mapper.sanitizeMessage(long)).toHaveLength(500);
+      const err = createApcoreError("MODULE_NOT_FOUND", long);
+      const result = mapper.toJsonRpcError(err);
+      expect(result.message).toHaveLength(500);
     });
 
     it("preserves clean messages", () => {
-      expect(mapper.sanitizeMessage("Field 'name' is required")).toBe("Field 'name' is required");
+      const err = createApcoreError("MODULE_NOT_FOUND", "Field 'name' is required");
+      const result = mapper.toJsonRpcError(err);
+      expect(result.message).toBe("Field 'name' is required");
     });
   });
 });

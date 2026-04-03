@@ -19,7 +19,7 @@ It solves a common problem: **you've built AI capabilities with apcore modules, 
 
 Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express 5](https://expressjs.com/).
 
-> **Also available in Python:** [`apcore-a2a` (PyPI)](https://github.com/aiperceivable/apcore-a2a-python)
+> **Also available in:** [Python](https://github.com/aiperceivable/apcore-a2a-python) | [Rust](https://github.com/aiperceivable/apcore-a2a-rust)
 
 ## Features
 
@@ -39,7 +39,7 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 ## Requirements
 
 - Node.js >= 18.0.0
-- `apcore-js` >= 0.14.0
+- `apcore-js` >= 0.15.1
 
 ---
 

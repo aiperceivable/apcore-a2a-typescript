@@ -54,6 +54,11 @@ export class A2AClient {
     return this.cardFetcher.fetch();
   }
 
+  /** Fetch and cache the remote Agent Card (equivalent to Python's agent_card property). */
+  get agentCard(): Promise<Record<string, unknown>> {
+    return this.cardFetcher.fetch();
+  }
+
   async sendMessage(
     message: Record<string, unknown>,
     opts?: { metadata?: Record<string, unknown>; contextId?: string },

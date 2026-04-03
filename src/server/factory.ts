@@ -13,14 +13,46 @@ import {
   UserBuilder,
 } from "@a2a-js/sdk/server/express";
 
+import { Config } from "apcore-js";
+
 import { SkillMapper } from "../adapters/skill-mapper.js";
 import { SchemaConverter } from "../adapters/schema.js";
 import { AgentCardBuilder, type Registry } from "../adapters/agent-card.js";
 import { PartConverter } from "../adapters/parts.js";
+import { ErrorMapper } from "../adapters/errors.js";
 import { ApCoreAgentExecutor } from "./executor.js";
 import { createAuthMiddleware } from "../auth/middleware.js";
 import { createExplorerRouter } from "../explorer/handler.js";
 import type { Authenticator } from "../auth/types.js";
+
+// Register apcore-a2a config namespace (apcore-js >= 0.15.0)
+if (typeof (Config as Record<string, unknown>).registerNamespace === "function") {
+  (Config as unknown as {
+    registerNamespace(ns: Record<string, unknown>): void;
+  }).registerNamespace({
+    name: "apcore-a2a",
+    envPrefix: "APCORE_A2A",
+    defaults: {
+      execution_timeout: 300,
+      cors_origins: [],
+      explorer: false,
+      metrics: false,
+      push_notifications: false,
+    },
+  });
+}
+
+// Register error formatter for the a2a adapter (apcore-js >= 0.15.0)
+import("apcore-js").then((mod) => {
+  const registry = (mod as Record<string, unknown>).ErrorFormatterRegistry as
+    | { register(name: string, formatter: ErrorMapper): void }
+    | undefined;
+  if (registry && typeof registry.register === "function") {
+    registry.register("a2a", new ErrorMapper());
+  }
+}).catch(() => {
+  // ErrorFormatterRegistry not available; skip registration
+});
 
 const ACTIVE_STATES = new Set(["submitted", "working", "input-required"]);
 
@@ -60,6 +92,7 @@ export interface A2AServerCreateOptions {
   auth?: Authenticator;
   executionTimeout?: number;
   corsOrigins?: string[];
+  pushNotifications?: boolean;
   explorer?: boolean;
   explorerPrefix?: string;
   metrics?: boolean;
@@ -91,7 +124,7 @@ export class A2AServerFactory {
     // Build capabilities
     const capabilities = {
       streaming: true,
-      pushNotifications: false,
+      pushNotifications: opts.pushNotifications ?? false,
       stateTransitionHistory: true,
     };
 
