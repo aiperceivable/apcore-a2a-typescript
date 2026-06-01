@@ -1,14 +1,32 @@
 import http from "node:http";
 import type { Express } from "express";
+import { Config } from "apcore-js";
 import { A2AServerFactory } from "./server/factory.js";
 import type { Registry } from "./adapters/agent-card.js";
 import type { Authenticator } from "./auth/types.js";
 import type { TaskStore } from "@a2a-js/sdk/server";
 
-const DEFAULT_EXECUTION_TIMEOUT = parseInt(
-  process.env.APCORE_A2A_EXECUTION_TIMEOUT ?? "300000",
-  10,
-);
+const A2A_NAMESPACE = "apcore-a2a";
+const DEFAULT_EXECUTION_TIMEOUT = 300; // seconds (matches the registered namespace default)
+
+/**
+ * Resolve the task execution timeout (seconds).
+ *
+ * Precedence: explicit option > apcore Config (`apcore-a2a.execution_timeout`,
+ * incl. `APCORE_A2A_EXECUTION_TIMEOUT` env override in namespace mode) > bare
+ * `APCORE_A2A_EXECUTION_TIMEOUT` env var (honored even without a config file) >
+ * the registered namespace default. Mirrors the Python binding.
+ */
+function resolveExecutionTimeout(explicit?: number): number {
+  if (explicit !== undefined) return explicit;
+  const fromConfig = Config.load(undefined, { validate: false }).get(
+    `${A2A_NAMESPACE}.execution_timeout`,
+  );
+  if (fromConfig !== undefined && fromConfig !== null) return Number(fromConfig);
+  const env = process.env.APCORE_A2A_EXECUTION_TIMEOUT;
+  if (env !== undefined) return parseInt(env, 10);
+  return DEFAULT_EXECUTION_TIMEOUT;
+}
 
 const AUTH_REQUIRED = ["authenticate", "securitySchemes"] as const;
 const TASK_STORE_REQUIRED = ["save", "load"] as const;
@@ -21,10 +39,12 @@ export interface AsyncServeOptions {
   auth?: Authenticator;
   taskStore?: TaskStore;
   corsOrigins?: string[];
+  pushNotifications?: boolean;
   explorer?: boolean;
   explorerPrefix?: string;
   executionTimeout?: number;
   metrics?: boolean;
+  sysModules?: boolean;
 }
 
 export interface ServeOptions extends AsyncServeOptions {
@@ -155,10 +175,12 @@ export async function asyncServe(
     taskStore: opts.taskStore,
     auth: opts.auth,
     corsOrigins: opts.corsOrigins,
+    pushNotifications: opts.pushNotifications,
     explorer: opts.explorer,
     explorerPrefix: opts.explorerPrefix,
-    executionTimeout: opts.executionTimeout ?? DEFAULT_EXECUTION_TIMEOUT,
+    executionTimeout: resolveExecutionTimeout(opts.executionTimeout),
     metrics: opts.metrics,
+    sysModules: opts.sysModules,
   });
 
   return app;

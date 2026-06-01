@@ -39,11 +39,11 @@ describe("ErrorMapper", () => {
       expect(result.message).toBe("Execution timeout");
     });
 
-    it("maps EXECUTION_TIMEOUT to -32603", () => {
-      const err = createApcoreError("EXECUTION_TIMEOUT", "Timed out");
+    it("maps EXECUTION_CANCELLED to -32603", () => {
+      const err = createApcoreError("EXECUTION_CANCELLED", "Cancelled");
       const result = mapper.toJsonRpcError(err);
       expect(result.code).toBe(-32603);
-      expect(result.message).toBe("Execution timeout");
+      expect(result.message).toBe("Execution cancelled");
     });
 
     it("maps CALL_DEPTH_EXCEEDED to -32603 safety limit", () => {
@@ -67,8 +67,8 @@ describe("ErrorMapper", () => {
       expect(result.message).toBe("Safety limit exceeded");
     });
 
-    it("maps INVALID_INPUT to -32602 with description", () => {
-      const err = createApcoreError("INVALID_INPUT", "Missing field name");
+    it("maps GENERAL_INVALID_INPUT to -32602 with description", () => {
+      const err = createApcoreError("GENERAL_INVALID_INPUT", "Missing field name");
       const result = mapper.toJsonRpcError(err);
       expect(result.code).toBe(-32602);
       expect(result.message).toBe("Invalid input: Missing field name");

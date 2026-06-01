@@ -154,7 +154,7 @@ serve(registryOrExecutor, {
   corsOrigins: ["http://localhost:3000"],
   explorer: true,            // Enable A2A Explorer UI
   explorerPrefix: "/explorer",
-  executionTimeout: 300_000, // ms (default: 300000)
+  executionTimeout: 300,     // seconds (default: 300)
   metrics: true,             // Enable /metrics endpoint
   shutdownTimeout: 30,       // Graceful shutdown timeout in seconds
 });

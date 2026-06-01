@@ -1,4 +1,5 @@
 import type { AgentSkill } from "@a2a-js/sdk";
+import { SchemaConverter, type JsonSchema } from "./schema.js";
 
 export interface ModuleDescriptor {
   module_id?: string;
@@ -15,6 +16,10 @@ export interface ModuleDescriptor {
 }
 
 export class SkillMapper {
+  // Share root-type detection with SchemaConverter so the "string root" rule
+  // lives in exactly one place.
+  constructor(private schemaConverter: SchemaConverter = new SchemaConverter()) {}
+
   toSkill(descriptor: ModuleDescriptor, moduleId?: string): AgentSkill | null {
     const description = descriptor.description;
     if (!description) return null;
@@ -68,7 +73,9 @@ export class SkillMapper {
   private computeInputModes(descriptor: ModuleDescriptor): string[] {
     const schema = descriptor.input_schema ?? descriptor.inputSchema;
     if (!schema) return ["text/plain"];
-    if (schema.type === "string") return ["application/json", "text/plain"];
+    if (this.schemaConverter.detectRootType(schema as JsonSchema) === "string") {
+      return ["application/json", "text/plain"];
+    }
     return ["application/json"];
   }
 

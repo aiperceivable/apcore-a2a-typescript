@@ -147,8 +147,8 @@ describe("ApCoreAgentExecutor", () => {
       const agent = new ApCoreAgentExecutor({
         executor,
         partConverter,
-
-        executionTimeout: 50,
+        // seconds (0.05s = 50ms); fires well before the 10s mock resolves
+        executionTimeout: 0.05,
       });
 
       const bus = makeEventBus();

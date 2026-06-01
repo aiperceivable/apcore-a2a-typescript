@@ -15,7 +15,14 @@ import {
   restHandler,
 } from "@a2a-js/sdk/server/express";
 
-import { Config, ErrorFormatterRegistry } from "apcore-js";
+import {
+  Config,
+  ErrorFormatterRegistry,
+  ObsLoggingMiddleware,
+  ErrorHistoryMiddleware,
+  ErrorHistory,
+  registerSysModules,
+} from "apcore-js";
 
 import { SkillMapper } from "../adapters/skill-mapper.js";
 import { SchemaConverter } from "../adapters/schema.js";
@@ -49,6 +56,13 @@ try {
 
 const ACTIVE_STATES = new Set(["submitted", "working", "input-required"]);
 
+/**
+ * In-process counters for the A2A `/metrics` endpoint. These count A2A
+ * task-state transitions (submitted/working/completed/...) on the wire
+ * protocol, a distinct concern from apcore's per-module observability metrics
+ * (latency, error rates) collected via ObsLoggingMiddleware /
+ * ErrorHistoryMiddleware. The two are intentionally separate.
+ */
 class MetricsState {
   activeTasks = 0;
   completedTasks = 0;
@@ -89,11 +103,12 @@ export interface A2AServerCreateOptions {
   explorer?: boolean;
   explorerPrefix?: string;
   metrics?: boolean;
+  sysModules?: boolean;
 }
 
 export class A2AServerFactory {
-  private skillMapper = new SkillMapper();
   private schemaConverter = new SchemaConverter();
+  private skillMapper = new SkillMapper(this.schemaConverter);
   private agentCardBuilder = new AgentCardBuilder(this.skillMapper);
   private partConverter = new PartConverter(this.schemaConverter);
   private registry?: Registry;
@@ -110,6 +125,47 @@ export class A2AServerFactory {
     opts: A2AServerCreateOptions,
   ): { app: Express; agentCard: AgentCard } {
     this.registry = registry;
+
+    // Wire apcore system modules + observability middleware onto the executor
+    // when it supports `.use()` (mirrors the Python binding). Duck-typed since
+    // the create() executor type only requires callAsync.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const supportsUse = typeof (executor as any).use === "function";
+
+    // P1-B: register sys.* modules BEFORE building the AgentCard so they appear
+    // as skills. Requires sysModules=true and an executor exposing .use().
+    if (opts.sysModules && supportsUse) {
+      try {
+        const registryCfg = ((registry as unknown as { config?: Record<string, unknown> }).config ??
+          {}) as Record<string, unknown>;
+        const apcoreCfg = (registryCfg.apcore ?? {}) as Record<string, unknown>;
+        const sysCfg = (apcoreCfg.sys_modules ?? {}) as Record<string, unknown>;
+        const sysData = {
+          ...registryCfg,
+          apcore: { ...apcoreCfg, sys_modules: { ...sysCfg, enabled: true } },
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        registerSysModules(registry as any, executor as any, new Config(sysData));
+      } catch {
+        // Continue without sys modules if registration fails.
+      }
+    }
+
+    // P1-A: structured per-call logging (always; low overhead). Error-history
+    // tracking only when metrics is on and sys modules are not (which may
+    // already install error tracking), matching the Python binding.
+    if (supportsUse) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (executor as any).use(new ObsLoggingMiddleware());
+        if (opts.metrics && !opts.sysModules) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (executor as any).use(new ErrorHistoryMiddleware(new ErrorHistory()));
+        }
+      } catch {
+        // Observability middleware is best-effort.
+      }
+    }
 
     // Build security schemes
     const securitySchemes = opts.auth ? opts.auth.securitySchemes() : undefined;

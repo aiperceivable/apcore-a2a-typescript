@@ -51,7 +51,9 @@ export class ApCoreAgentExecutor implements AgentExecutor {
   private executor: ApCoreAgentExecutorOptions["executor"];
   private partConverter: PartConverter;
   private registry?: Registry;
-  private executionTimeout: number;
+  // Public executionTimeout is in seconds (matches the Python binding); stored
+  // here in milliseconds for setTimeout / global_deadline arithmetic.
+  private executionTimeoutMs: number;
   private onStateChange?: (oldState: string, newState: string) => void;
   // P0-B: CancelToken map keyed by taskId
   private cancelTokens = new Map<string, { cancel(): void }>();
@@ -60,7 +62,7 @@ export class ApCoreAgentExecutor implements AgentExecutor {
     this.executor = opts.executor;
     this.partConverter = opts.partConverter;
     this.registry = opts.registry;
-    this.executionTimeout = opts.executionTimeout ?? 300_000;
+    this.executionTimeoutMs = (opts.executionTimeout ?? 300) * 1000;
     this.onStateChange = opts.onStateChange;
   }
 
@@ -145,7 +147,7 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       // (ms-since-epoch), NOT the Context.create globalDeadline param — so we
       // seed it via data. Pre-seeding also wins over BuiltinContextCreation,
       // which only sets the key when absent.
-      const data = { [CTX_GLOBAL_DEADLINE]: Date.now() + this.executionTimeout };
+      const data = { [CTX_GLOBAL_DEADLINE]: Date.now() + this.executionTimeoutMs };
       // Context.create(identity, traceParent, cancelToken, data, services, globalDeadline)
       apcoreCtx = identity
         ? Context.create(identity, null, token, data)
@@ -167,18 +169,19 @@ export class ApCoreAgentExecutor implements AgentExecutor {
 
     try {
       if (canStream) {
-        // P0-A: Streaming path
-        await withTimeout(
-          this.executeStreaming(context, eventBus, skillId, inputObj, apcoreCtx),
-          this.executionTimeout,
-        );
+        // P0-A: Streaming path. The timeout is enforced cooperatively by
+        // apcore's global_deadline (seeded above) between chunks/steps and
+        // surfaces as MODULE_TIMEOUT, so we do NOT wrap the stream in a second
+        // withTimeout (matches the Python binding, which relies on
+        // global_deadline rather than asyncio.wait_for on the streaming path).
+        await this.executeStreaming(context, eventBus, skillId, inputObj, apcoreCtx);
       } else {
         // Non-streaming path (callAsync)
         let output: Record<string, unknown>;
         const coro = apcoreCtx
           ? this.executor.callAsync(skillId, inputObj, apcoreCtx)
           : this.executor.callAsync(skillId, inputObj);
-        output = await withTimeout(coro, this.executionTimeout);
+        output = await withTimeout(coro, this.executionTimeoutMs);
 
         // 8. Publish artifact + completed
         const artifact = this.partConverter.outputToParts(output, context.taskId);

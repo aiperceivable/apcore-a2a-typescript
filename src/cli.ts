@@ -177,7 +177,7 @@ async function runServe(
     auth,
     explorer: !!values.explorer,
     corsOrigins,
-    executionTimeout: parseInt((values["execution-timeout"] as string) ?? "300", 10) * 1000,
+    executionTimeout: parseInt((values["execution-timeout"] as string) ?? "300", 10),
     logLevel: values["log-level"] as string | undefined,
     metrics: !!values.metrics,
   });
