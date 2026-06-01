@@ -209,7 +209,15 @@ export class A2AServerFactory {
     }
 
     // Agent card endpoint
-    app.get(
+    // agentCardHandler() returns a router that responds at its mount root ("/"),
+    // so it must be mounted with app.use(path, ...) rather than app.get(path, ...).
+    // A2A 1.0 primary endpoint
+    app.use(
+      "/.well-known/agent-card.json",
+      agentCardHandler({ agentCardProvider: requestHandler }),
+    );
+    // A2A 0.3 alias (kept for backward compatibility)
+    app.use(
       "/.well-known/agent.json",
       agentCardHandler({ agentCardProvider: requestHandler }),
     );

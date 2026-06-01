@@ -50,6 +50,29 @@ describe("A2AServerFactory", () => {
     });
   });
 
+  describe("agent card endpoint", () => {
+    it("serves the A2A 1.0 primary endpoint /.well-known/agent-card.json", async () => {
+      const factory = new A2AServerFactory();
+      const { app } = factory.create(makeRegistry(), makeExecutor(), baseOpts);
+
+      const res = await request(app).get("/.well-known/agent-card.json");
+
+      expect(res.status).toBe(200);
+      expect(res.body.name).toBe("TestAgent");
+      expect(res.body.version).toBe("1.0.0");
+    });
+
+    it("serves the A2A 0.3 alias /.well-known/agent.json", async () => {
+      const factory = new A2AServerFactory();
+      const { app } = factory.create(makeRegistry(), makeExecutor(), baseOpts);
+
+      const res = await request(app).get("/.well-known/agent.json");
+
+      expect(res.status).toBe(200);
+      expect(res.body.name).toBe("TestAgent");
+    });
+  });
+
   describe("health endpoint", () => {
     it("returns healthy status", async () => {
       const factory = new A2AServerFactory();
