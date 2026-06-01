@@ -84,7 +84,7 @@ console.log(`Total:               ${registry.moduleIds.length}`);
 // 3. Optional JWT auth via JWT_SECRET env var
 const jwtSecret = process.env.JWT_SECRET;
 const authenticator = jwtSecret
-  ? new JWTAuthenticator({ secret: jwtSecret })
+  ? new JWTAuthenticator(jwtSecret)
   : undefined;
 
 if (authenticator) {
