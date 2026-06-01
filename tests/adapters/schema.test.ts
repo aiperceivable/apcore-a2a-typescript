@@ -73,9 +73,13 @@ describe("SchemaConverter", () => {
       expect((item.properties as Record<string, unknown>).tag).toEqual({ type: "string" });
     });
 
-    it("throws on circular $ref", () => {
+    it("handles circular $ref gracefully (depth-capped, no throw)", () => {
+      // apcore-toolkit's resolver is depth-capped and does not throw on
+      // circular refs — it returns a partially-resolved schema. Matches the
+      // shared behavior used by apcore-mcp / apcore-cli and the Python adapter.
+      let result: Record<string, unknown> | undefined;
       expect(() => {
-        converter.convertInputSchema({
+        result = converter.convertInputSchema({
           input_schema: {
             type: "object",
             properties: {
@@ -86,35 +90,35 @@ describe("SchemaConverter", () => {
             },
           },
         });
-      }).toThrow("Circular $ref detected");
+      }).not.toThrow();
+      expect(result!.$defs).toBeUndefined();
+      expect((result!.properties as Record<string, unknown>).a).toBeDefined();
     });
 
-    it("throws on unsupported $ref format", () => {
-      expect(() => {
-        converter.convertInputSchema({
-          input_schema: {
-            type: "object",
-            properties: {
-              a: { $ref: "http://external.com/schema" },
-            },
-            $defs: {},
+    it("resolves an unsupported (non-pointer) $ref to an empty object", () => {
+      const result = converter.convertInputSchema({
+        input_schema: {
+          type: "object",
+          properties: {
+            a: { $ref: "http://external.com/schema" },
           },
-        });
-      }).toThrow("Unsupported $ref format");
+          $defs: {},
+        },
+      });
+      expect((result.properties as Record<string, unknown>).a).toEqual({});
     });
 
-    it("throws when $ref definition is not found", () => {
-      expect(() => {
-        converter.convertInputSchema({
-          input_schema: {
-            type: "object",
-            properties: {
-              a: { $ref: "#/$defs/Missing" },
-            },
-            $defs: {},
+    it("resolves a missing $ref definition to an empty object", () => {
+      const result = converter.convertInputSchema({
+        input_schema: {
+          type: "object",
+          properties: {
+            a: { $ref: "#/$defs/Missing" },
           },
-        });
-      }).toThrow("Definition not found: Missing");
+          $defs: {},
+        },
+      });
+      expect((result.properties as Record<string, unknown>).a).toEqual({});
     });
   });
 

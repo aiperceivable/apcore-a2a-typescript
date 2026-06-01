@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
-import type { Artifact, Part } from "@a2a-js/sdk";
+import { Artifact } from "@a2a-js/sdk";
+import type { Part } from "@a2a-js/sdk";
 import { SchemaConverter } from "./schema.js";
 import type { ModuleDescriptor } from "./skill-mapper.js";
 
@@ -19,50 +20,53 @@ export class PartConverter {
     }
 
     const part = parts[0];
+    // a2a-js 1.0 Part is a protobuf oneof: part.content = { $case, value }.
+    const content = part.content;
 
-    if (part.kind === "text") {
+    if (content?.$case === "text") {
+      const text = content.value;
       const inputSchema = descriptor?.input_schema ?? descriptor?.inputSchema ?? null;
       const rootType = this.schemaConverter.detectRootType(inputSchema);
       if (rootType === "object") {
         try {
-          return JSON.parse(part.text) as Record<string, unknown>;
+          return JSON.parse(text) as Record<string, unknown>;
         } catch (e) {
           throw new Error(`TextPart text is not valid JSON: ${e}`);
         }
       }
-      return part.text;
+      return text;
     }
 
-    if (part.kind === "data") {
-      return part.data;
+    if (content?.$case === "data") {
+      return content.value as Record<string, unknown>;
     }
 
-    if (part.kind === "file") {
+    if (content?.$case === "raw" || content?.$case === "url") {
       throw new Error("FilePart is not supported");
     }
 
-    throw new Error(`Unsupported part type: ${(part as Part).kind}`);
+    throw new Error("Unsupported part type: empty or unknown content");
   }
 
   outputToParts(output: unknown, taskId?: string): Artifact {
     const artifactId = `art-${taskId || uuidv4()}`;
 
     if (output === null || output === undefined) {
-      return { artifactId, parts: [] };
+      return Artifact.fromJSON({ artifactId, parts: [] });
     }
 
     if (typeof output === "string") {
-      return { artifactId, parts: [{ kind: "text", text: output }] };
+      return Artifact.fromJSON({ artifactId, parts: [{ text: output }] });
     }
 
     if (Array.isArray(output)) {
-      return { artifactId, parts: [{ kind: "text", text: JSON.stringify(output) }] };
+      return Artifact.fromJSON({ artifactId, parts: [{ text: JSON.stringify(output) }] });
     }
 
     if (typeof output === "object") {
-      return { artifactId, parts: [{ kind: "data", data: output as Record<string, unknown> }] };
+      return Artifact.fromJSON({ artifactId, parts: [{ data: output }] });
     }
 
-    return { artifactId, parts: [{ kind: "text", text: String(output) }] };
+    return Artifact.fromJSON({ artifactId, parts: [{ text: String(output) }] });
   }
 }

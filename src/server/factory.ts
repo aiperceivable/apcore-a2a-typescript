@@ -1,19 +1,21 @@
 import express from "express";
 import type { Express, Request, Response } from "express";
-import type { AgentCard } from "@a2a-js/sdk";
+import type { AgentCard, AgentCapabilities } from "@a2a-js/sdk";
 import {
   DefaultRequestHandler,
   DefaultExecutionEventBusManager,
   InMemoryTaskStore,
+  ServerCallContext,
   type TaskStore,
 } from "@a2a-js/sdk/server";
 import {
   jsonRpcHandler,
   agentCardHandler,
   UserBuilder,
+  restHandler,
 } from "@a2a-js/sdk/server/express";
 
-import { Config } from "apcore-js";
+import { Config, ErrorFormatterRegistry } from "apcore-js";
 
 import { SkillMapper } from "../adapters/skill-mapper.js";
 import { SchemaConverter } from "../adapters/schema.js";
@@ -25,34 +27,25 @@ import { createAuthMiddleware } from "../auth/middleware.js";
 import { createExplorerRouter } from "../explorer/handler.js";
 import type { Authenticator } from "../auth/types.js";
 
-// Register apcore-a2a config namespace (apcore-js >= 0.15.0)
-if (typeof (Config as Record<string, unknown>).registerNamespace === "function") {
-  (Config as unknown as {
-    registerNamespace(ns: Record<string, unknown>): void;
-  }).registerNamespace({
-    name: "apcore-a2a",
-    envPrefix: "APCORE_A2A",
-    defaults: {
-      execution_timeout: 300,
-      cors_origins: [],
-      explorer: false,
-      metrics: false,
-      push_notifications: false,
-    },
-  });
-}
-
-// Register error formatter for the a2a adapter (apcore-js >= 0.15.0)
-import("apcore-js").then((mod) => {
-  const registry = (mod as Record<string, unknown>).ErrorFormatterRegistry as
-    | { register(name: string, formatter: ErrorMapper): void }
-    | undefined;
-  if (registry && typeof registry.register === "function") {
-    registry.register("a2a", new ErrorMapper());
-  }
-}).catch(() => {
-  // ErrorFormatterRegistry not available; skip registration
+// Register apcore-a2a config namespace (stable in apcore-js >= 0.22.0)
+Config.registerNamespace({
+  name: "apcore-a2a",
+  envPrefix: "APCORE_A2A",
+  defaults: {
+    execution_timeout: 300,
+    cors_origins: [],
+    explorer: false,
+    metrics: false,
+    push_notifications: false,
+  },
 });
+
+// Register error formatter for the a2a adapter (stable top-level export in apcore-js >= 0.22.0)
+try {
+  ErrorFormatterRegistry.register("a2a", new ErrorMapper());
+} catch {
+  // Already registered; skip
+}
 
 const ACTIVE_STATES = new Set(["submitted", "working", "input-required"]);
 
@@ -121,11 +114,11 @@ export class A2AServerFactory {
     // Build security schemes
     const securitySchemes = opts.auth ? opts.auth.securitySchemes() : undefined;
 
-    // Build capabilities
-    const capabilities = {
+    // Build capabilities (a2a-js 1.0 AgentCapabilities shape)
+    const capabilities: AgentCapabilities = {
       streaming: true,
       pushNotifications: opts.pushNotifications ?? false,
-      stateTransitionHistory: true,
+      extensions: [],
     };
 
     // Build AgentCard
@@ -231,6 +224,14 @@ export class A2AServerFactory {
       }),
     );
 
+    // REST transport endpoints (A2A HTTP+JSON/REST protocol)
+    app.use(
+      restHandler({
+        requestHandler,
+        userBuilder: UserBuilder.noAuthentication,
+      }),
+    );
+
     // Explorer UI
     if (opts.explorer) {
       app.use(explorerPrefix, createExplorerRouter(agentCard, { registry }));
@@ -246,7 +247,9 @@ export class A2AServerFactory {
       }
 
       try {
-        await taskStore.load("__health_probe__");
+        // a2a-js 1.0 TaskStore.load requires a ServerCallContext (tenant /
+        // owner scoping); a default context is sufficient for a reachability probe.
+        await taskStore.load("__health_probe__", new ServerCallContext());
       } catch {
         res.status(503).json({
           status: "unhealthy",

@@ -1,14 +1,11 @@
 import { v4 as uuidv4 } from "uuid";
-import type {
-  TaskStatusUpdateEvent,
-  TaskArtifactUpdateEvent,
-  Message,
-  Part,
-} from "@a2a-js/sdk";
-import type {
-  AgentExecutor,
-  RequestContext,
-  ExecutionEventBus,
+import { Artifact, Part, Role, TaskState } from "@a2a-js/sdk";
+import type { Message, TaskStatus } from "@a2a-js/sdk";
+import {
+  AgentEvent,
+  type AgentExecutor,
+  type RequestContext,
+  type ExecutionEventBus,
 } from "@a2a-js/sdk/server";
 import { getAuthIdentity } from "../auth/storage.js";
 import type { PartConverter } from "../adapters/parts.js";
@@ -20,11 +17,20 @@ function utcNow(): string {
 
 function textMessage(text: string): Message {
   return {
-    kind: "message",
     messageId: uuidv4(),
-    role: "agent",
-    parts: [{ kind: "text", text }],
+    contextId: "",
+    taskId: "",
+    role: Role.ROLE_AGENT,
+    parts: [Part.fromJSON({ text })],
+    metadata: undefined,
+    extensions: [],
+    referenceTaskIds: [],
   };
+}
+
+/** Build a TaskStatus with the current timestamp (a2a-js 1.0 protobuf shape). */
+function makeStatus(state: TaskState, message?: Message): TaskStatus {
+  return { state, message, timestamp: utcNow() };
 }
 
 export interface ApCoreAgentExecutorOptions {
@@ -47,6 +53,8 @@ export class ApCoreAgentExecutor implements AgentExecutor {
   private registry?: Registry;
   private executionTimeout: number;
   private onStateChange?: (oldState: string, newState: string) => void;
+  // P0-B: CancelToken map keyed by taskId
+  private cancelTokens = new Map<string, { cancel(): void }>();
 
   constructor(opts: ApCoreAgentExecutorOptions) {
     this.executor = opts.executor;
@@ -69,13 +77,16 @@ export class ApCoreAgentExecutor implements AgentExecutor {
   async execute(context: RequestContext, eventBus: ExecutionEventBus): Promise<void> {
     // 1. Initialize task in the event bus so ResultManager can track it
     const contextId = context.contextId || context.taskId;
-    eventBus.publish({
-      kind: "task",
-      id: context.taskId,
-      contextId,
-      status: { state: "submitted", timestamp: utcNow() },
-      history: [],
-    } as unknown as TaskStatusUpdateEvent);
+    eventBus.publish(
+      AgentEvent.task({
+        id: context.taskId,
+        contextId,
+        status: makeStatus(TaskState.TASK_STATE_SUBMITTED),
+        artifacts: [],
+        history: [],
+        metadata: undefined,
+      }),
+    );
 
     // 2. Get skillId from message metadata
     const metadata = context.userMessage?.metadata ?? {};
@@ -120,32 +131,92 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       return;
     }
 
-    // 5. Build apcore context with identity
+    // 5. Build apcore context with identity and CancelToken (P0-B)
     const identity = getAuthIdentity();
     let apcoreCtx: unknown = undefined;
     try {
-      const { Context } = await import("apcore-js");
-      apcoreCtx = identity ? Context.create(null, identity) : Context.create();
+      const { Context, CancelToken, CTX_GLOBAL_DEADLINE } = await import("apcore-js");
+      // P0-B: create a CancelToken per task and store it
+      const token = new CancelToken();
+      this.cancelTokens.set(context.taskId, token);
+      // Map the A2A executionTimeout onto apcore's global_deadline so apcore
+      // can stop cooperatively between streaming chunks / pipeline steps.
+      // NOTE: apcore-js enforces the deadline from data[CTX_GLOBAL_DEADLINE]
+      // (ms-since-epoch), NOT the Context.create globalDeadline param — so we
+      // seed it via data. Pre-seeding also wins over BuiltinContextCreation,
+      // which only sets the key when absent.
+      const data = { [CTX_GLOBAL_DEADLINE]: Date.now() + this.executionTimeout };
+      // Context.create(identity, traceParent, cancelToken, data, services, globalDeadline)
+      apcoreCtx = identity
+        ? Context.create(identity, null, token, data)
+        : Context.create(null, null, token, data);
     } catch {
-      // apcore-js Context not available in this environment
+      // apcore-js Context/CancelToken not available in this environment
     }
 
-    // 6. Execute via executor.callAsync() with timeout
+    // 6. Check if executor supports streaming (P0-A)
+    const streamFn = (this.executor as { stream?: unknown }).stream;
+    const canStream =
+      typeof streamFn === "function" &&
+      (streamFn.constructor?.name === "AsyncGeneratorFunction" ||
+        Object.prototype.toString.call(streamFn) === "[object AsyncGeneratorFunction]");
+
+    // 7. Execute with timeout
     this.notify("submitted", "working");
-    let output: Record<string, unknown>;
+    const inputObj = typeof inputs === "string" ? { text: inputs } : inputs;
+
     try {
-      const inputObj = typeof inputs === "string" ? { text: inputs } : inputs;
-      const coro = apcoreCtx
-        ? this.executor.callAsync(skillId, inputObj, apcoreCtx)
-        : this.executor.callAsync(skillId, inputObj);
-      output = await withTimeout(coro, this.executionTimeout);
+      if (canStream) {
+        // P0-A: Streaming path
+        await withTimeout(
+          this.executeStreaming(context, eventBus, skillId, inputObj, apcoreCtx),
+          this.executionTimeout,
+        );
+      } else {
+        // Non-streaming path (callAsync)
+        let output: Record<string, unknown>;
+        const coro = apcoreCtx
+          ? this.executor.callAsync(skillId, inputObj, apcoreCtx)
+          : this.executor.callAsync(skillId, inputObj);
+        output = await withTimeout(coro, this.executionTimeout);
+
+        // 8. Publish artifact + completed
+        const artifact = this.partConverter.outputToParts(output, context.taskId);
+
+        eventBus.publish(
+          AgentEvent.artifactUpdate({
+            taskId: context.taskId,
+            contextId,
+            artifact,
+            append: false,
+            lastChunk: true,
+            metadata: undefined,
+          }),
+        );
+
+        this.publishCompleted(context, eventBus);
+      }
     } catch (e: unknown) {
+      // Clean up cancel token on any exit
+      this.cancelTokens.delete(context.taskId);
+
       if (e instanceof TimeoutError) {
         this.notify("working", "failed");
         this.publishFailed(context, eventBus, "Execution timed out");
         return;
       }
       const code = (e as { code?: string }).code;
+      if (code === "MODULE_TIMEOUT") {
+        // apcore enforced global_deadline (streaming or cooperative step)
+        this.notify("working", "failed");
+        this.publishFailed(context, eventBus, "Execution timed out");
+        return;
+      }
+      if (code === "EXECUTION_CANCELLED") {
+        this.notify("working", "canceled");
+        this.publishCanceled(context, eventBus, "Execution cancelled");
+        return;
+      }
       if (code === "APPROVAL_PENDING") {
         this.notify("working", "input-required");
         this.publishInputRequired(context, eventBus, String(e));
@@ -157,43 +228,100 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       return;
     }
 
-    // 7. Publish artifact + completed
-    const artifact = this.partConverter.outputToParts(output, context.taskId);
+    // Clean up cancel token on successful completion
+    this.cancelTokens.delete(context.taskId);
+  }
 
-    eventBus.publish({
-      kind: "artifact-update",
-      taskId: context.taskId,
-      contextId,
-      artifact,
-      append: false,
-      lastChunk: true,
-    } as TaskArtifactUpdateEvent);
+  /**
+   * P0-A: Streaming execution path. Iterates executor.stream() and emits
+   * TaskArtifactUpdateEvent for each chunk, then publishes completed.
+   */
+  private async executeStreaming(
+    context: RequestContext,
+    eventBus: ExecutionEventBus,
+    moduleId: string,
+    inputs: Record<string, unknown>,
+    apcoreCtx: unknown,
+  ): Promise<void> {
+    const contextId = context.contextId || context.taskId;
+    const artifactId = `art-${context.taskId}`;
+    let chunkIndex = 0;
 
-    eventBus.publish({
-      kind: "status-update",
-      taskId: context.taskId,
-      contextId,
-      status: { state: "completed", timestamp: utcNow() },
-      final: true,
-    } as TaskStatusUpdateEvent);
+    const streamFn = (
+      this.executor as unknown as {
+        stream: (moduleId: string, inputs: Record<string, unknown>, ctx?: unknown) => AsyncGenerator<Record<string, unknown>>;
+      }
+    ).stream;
+    const gen = apcoreCtx
+      ? streamFn.call(this.executor, moduleId, inputs, apcoreCtx)
+      : streamFn.call(this.executor, moduleId, inputs);
 
-    this.notify("working", "completed");
+    for await (const chunk of gen) {
+      const artifact = this.partConverter.outputToParts(chunk, context.taskId);
+      // Override artifactId to be consistent across chunks
+      const chunkArtifact: Artifact = { ...artifact, artifactId };
+
+      eventBus.publish(
+        AgentEvent.artifactUpdate({
+          taskId: context.taskId,
+          contextId,
+          artifact: chunkArtifact,
+          append: chunkIndex > 0,
+          lastChunk: false,
+          metadata: undefined,
+        }),
+      );
+
+      chunkIndex++;
+    }
+
+    // Signal end of stream with lastChunk: true
+    eventBus.publish(
+      AgentEvent.artifactUpdate({
+        taskId: context.taskId,
+        contextId,
+        artifact: Artifact.fromJSON({ artifactId, parts: [] }),
+        append: chunkIndex > 0,
+        lastChunk: true,
+        metadata: undefined,
+      }),
+    );
+
+    this.publishCompleted(context, eventBus);
   }
 
   async cancelTask(taskId: string, eventBus: ExecutionEventBus): Promise<void> {
-    eventBus.publish({
-      kind: "status-update",
-      taskId,
-      contextId: taskId,
-      status: {
-        state: "canceled",
-        timestamp: utcNow(),
-        message: textMessage("Canceled by client"),
-      },
-      final: true,
-    } as TaskStatusUpdateEvent);
+    // P0-B: Cancel the running execution via CancelToken
+    const token = this.cancelTokens.get(taskId);
+    if (token) {
+      token.cancel();
+      this.cancelTokens.delete(taskId);
+    }
+
+    eventBus.publish(
+      AgentEvent.statusUpdate({
+        taskId,
+        contextId: taskId,
+        status: makeStatus(TaskState.TASK_STATE_CANCELED, textMessage("Canceled by client")),
+        metadata: undefined,
+      }),
+    );
 
     this.notify("working", "canceled");
+  }
+
+  private publishCompleted(context: RequestContext, eventBus: ExecutionEventBus): void {
+    const contextId = context.contextId || context.taskId;
+    eventBus.publish(
+      AgentEvent.statusUpdate({
+        taskId: context.taskId,
+        contextId,
+        status: makeStatus(TaskState.TASK_STATE_COMPLETED),
+        metadata: undefined,
+      }),
+    );
+
+    this.notify("working", "completed");
   }
 
   private publishFailed(
@@ -202,17 +330,14 @@ export class ApCoreAgentExecutor implements AgentExecutor {
     message: string,
   ): void {
     const contextId = context.contextId || context.taskId;
-    eventBus.publish({
-      kind: "status-update",
-      taskId: context.taskId,
-      contextId,
-      status: {
-        state: "failed",
-        timestamp: utcNow(),
-        message: textMessage(message),
-      },
-      final: true,
-    } as TaskStatusUpdateEvent);
+    eventBus.publish(
+      AgentEvent.statusUpdate({
+        taskId: context.taskId,
+        contextId,
+        status: makeStatus(TaskState.TASK_STATE_FAILED, textMessage(message)),
+        metadata: undefined,
+      }),
+    );
   }
 
   private publishInputRequired(
@@ -221,17 +346,30 @@ export class ApCoreAgentExecutor implements AgentExecutor {
     message: string,
   ): void {
     const contextId = context.contextId || context.taskId;
-    eventBus.publish({
-      kind: "status-update",
-      taskId: context.taskId,
-      contextId,
-      status: {
-        state: "input-required",
-        timestamp: utcNow(),
-        message: textMessage(message),
-      },
-      final: false,
-    } as TaskStatusUpdateEvent);
+    eventBus.publish(
+      AgentEvent.statusUpdate({
+        taskId: context.taskId,
+        contextId,
+        status: makeStatus(TaskState.TASK_STATE_INPUT_REQUIRED, textMessage(message)),
+        metadata: undefined,
+      }),
+    );
+  }
+
+  private publishCanceled(
+    context: RequestContext,
+    eventBus: ExecutionEventBus,
+    message: string,
+  ): void {
+    const contextId = context.contextId || context.taskId;
+    eventBus.publish(
+      AgentEvent.statusUpdate({
+        taskId: context.taskId,
+        contextId,
+        status: makeStatus(TaskState.TASK_STATE_CANCELED, textMessage(message)),
+        metadata: undefined,
+      }),
+    );
   }
 }
 

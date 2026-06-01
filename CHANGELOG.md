@@ -5,11 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-03-31
+## [0.4.0] - 2026-06-01
+
+### Changed
+
+- **A2A protocol upgraded 0.3 → 1.0 (BREAKING)** — migrated to `@a2a-js/sdk >= 1.0.0-alpha.0` (protobuf-derived wire format):
+  - `Part` is a flattened `oneof` (`{text}` / `{data}` / `{raw}` / `{url}`, accessed via `part.content.$case`); `TaskState` / `Role` are enums serializing full names (`TASK_STATE_*` / `ROLE_*`).
+  - Events published via `AgentEvent.task()` / `.statusUpdate()` / `.artifactUpdate()`; `AgentExecutionEvent` is the `oneof` `{task|statusUpdate|artifactUpdate|message}` — no `kind:"status-update"` literals, no `final` flag.
+  - `AgentCard`: `url` → `supportedInterfaces`; `supportsAuthenticatedExtendedCard` → `capabilities.extendedAgentCard`; `capabilities.extensions` added, `stateTransitionHistory` dropped; `AgentSkill.securityRequirements` added; new `provider` / `securityRequirements` / `signatures`.
+  - `InMemoryTaskStore.load/save` now require a `ServerCallContext`; Agent Card served at `/.well-known/agent-card.json` (+ `/.well-known/agent.json` 0.3 alias).
+- **`apcore-js` dependency** bumped to `>=0.22.0`; **added `apcore-toolkit >=0.8.0`** (schema `$ref` resolution via `deepResolveRefs`).
+- **New apcore 0.22 capabilities wired** — streaming via `executor.stream()`, cooperative cancellation via `CancelToken`, `global_deadline` (seeded from `executionTimeout` into `data[CTX_GLOBAL_DEADLINE]`), `ObsLoggingMiddleware`, and `register_sys_modules` (new `sysModules` option).
+- **Env prefix** — `APCORE__A2A` (double underscore) → `APCORE_A2A` (single underscore).
+- **`ErrorMapper.sanitizeMessage`** changed from public to private, aligning with Python SDK and spec.
 
 ### Added
 
-- **Error Formatter Registry** (§8.8) — `ErrorMapper` registers with `ErrorFormatterRegistry.register("a2a", ...)` at module load, making the A2A error formatter discoverable by the ecosystem (feature-detected for backward compatibility with apcore-js 0.14.x).
+- **Error Formatter Registry** (§8.8) — `ErrorMapper` registers with `ErrorFormatterRegistry.register("a2a", ...)` at module load, making the A2A error formatter discoverable by the ecosystem.
 - **Config Bus namespace** (§9.13) — registers the `apcore-a2a` namespace with env prefix `APCORE_A2A` and defaults for `execution_timeout`, `cors_origins`, `explorer`, `metrics`, `push_notifications`.
 - **New error codes** in `ErrorMapper` — `MODULE_DISABLED` (→ "Module is currently disabled"), `CONFIG_NAMESPACE_DUPLICATE`, `CONFIG_MOUNT_ERROR`, `CONFIG_BIND_ERROR` (→ "Configuration error").
 - **`format()` method** on `ErrorMapper` — implements the `ErrorFormatter` interface, delegating to `toJsonRpcError()`.
@@ -17,13 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`agentCard`** getter on `A2AClient` — equivalent to Python's `agent_card` async property.
 - **`VERSION` constant** exported from top-level `index.ts`.
 - **Top-level re-exports** — `AgentCardBuilder`, `SkillMapper`, `SchemaConverter`, `ErrorMapper`, `PartConverter`, `A2AServerFactory`, `ApCoreAgentExecutor`, `createAuthMiddleware`, `authIdentityStore`, `getAuthIdentity` now exported from `"apcore-a2a"`.
-- 6 new tests for new error codes and `format()` method.
-
-### Changed
-
-- **`apcore-js` dependency** bumped from `^0.14.0` to `^0.15.1`.
-- **Env prefix** — `APCORE__A2A` (double underscore) → `APCORE_A2A` (single underscore), per apcore 0.15.1 convention simplification.
-- **`ErrorMapper.sanitizeMessage`** changed from public to private, aligning with Python SDK and spec.
+- A2A 1.0 migration covered by the full suite — **257 tests passing**.
 
 ---
 

@@ -16,7 +16,7 @@ function createRegistry(modules: Record<string, { description?: string }>): Regi
 const defaultCapabilities: AgentCapabilities = {
   streaming: true,
   pushNotifications: false,
-  stateTransitionHistory: true,
+  extensions: [],
 };
 
 describe("AgentCardBuilder", () => {
@@ -43,7 +43,8 @@ describe("AgentCardBuilder", () => {
       expect(card.name).toBe("test-agent");
       expect(card.description).toBe("A test agent");
       expect(card.version).toBe("1.0.0");
-      expect(card.url).toBe("http://localhost:8000");
+      expect(card.supportedInterfaces[0].url).toBe("http://localhost:8000");
+      expect(card.supportedInterfaces[0].protocolVersion).toBe("1.0");
       expect(card.skills).toHaveLength(2);
       expect(card.skills![0].id).toBe("image.resize");
       expect(card.skills![1].id).toBe("text.summarize");
@@ -67,19 +68,19 @@ describe("AgentCardBuilder", () => {
       expect(card.defaultOutputModes).toEqual(["text/plain", "application/json"]);
     });
 
-    it("sets supportsAuthenticatedExtendedCard when securitySchemes provided", () => {
+    it("sets capabilities.extendedAgentCard when securitySchemes provided", () => {
       const registry = createRegistry({ ping: { description: "Ping" } });
       const card = builder.build(registry, {
         ...baseOpts,
         securitySchemes: { bearerAuth: { type: "http", scheme: "bearer" } },
       });
-      expect(card.supportsAuthenticatedExtendedCard).toBe(true);
+      expect(card.capabilities!.extendedAgentCard).toBe(true);
     });
 
-    it("sets supportsAuthenticatedExtendedCard to false without securitySchemes", () => {
+    it("sets capabilities.extendedAgentCard to false without securitySchemes", () => {
       const registry = createRegistry({ ping: { description: "Ping" } });
       const card = builder.build(registry, baseOpts);
-      expect(card.supportsAuthenticatedExtendedCard).toBe(false);
+      expect(card.capabilities!.extendedAgentCard).toBe(false);
     });
   });
 

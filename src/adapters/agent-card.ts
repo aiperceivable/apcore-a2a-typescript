@@ -28,18 +28,32 @@ export class AgentCardBuilder {
   ): AgentCard {
     const skills = this.buildSkills(registry);
 
+    // a2a-js 1.0 AgentCard: `url` is replaced by `supportedInterfaces`, and the
+    // protocol version lives on each interface. extendedAgentCard moves to
+    // capabilities.
     const card: AgentCard = {
       name: opts.name,
       description: opts.description,
       version: opts.version,
-      url: opts.url,
-      protocolVersion: "0.2.1",
+      supportedInterfaces: [
+        {
+          url: opts.url,
+          protocolBinding: "JSONRPC",
+          tenant: "",
+          protocolVersion: "1.0",
+        },
+      ],
+      provider: undefined,
       skills,
-      capabilities: opts.capabilities,
+      capabilities: {
+        ...opts.capabilities,
+        extendedAgentCard: opts.securitySchemes != null,
+      },
       defaultInputModes: ["text/plain", "application/json"],
       defaultOutputModes: ["text/plain", "application/json"],
-      securitySchemes: opts.securitySchemes as AgentCard["securitySchemes"],
-      supportsAuthenticatedExtendedCard: opts.securitySchemes != null,
+      securitySchemes: (opts.securitySchemes ?? {}) as AgentCard["securitySchemes"],
+      securityRequirements: [],
+      signatures: [],
     };
 
     this.cachedCard = card;

@@ -54,6 +54,7 @@ export class SkillMapper {
       inputModes: this.computeInputModes(descriptor),
       outputModes: this.computeOutputModes(descriptor),
       examples: this.buildExamples(descriptor),
+      securityRequirements: [],
     };
   }
 

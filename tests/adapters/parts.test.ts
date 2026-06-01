@@ -1,45 +1,45 @@
 import { describe, it, expect } from "vitest";
 import { PartConverter } from "../../src/adapters/parts.js";
-import type { Part } from "@a2a-js/sdk";
+import { Part } from "@a2a-js/sdk";
 
 describe("PartConverter", () => {
   const converter = new PartConverter();
 
   describe("partsToInput", () => {
     it("converts TextPart with object schema to parsed JSON", () => {
-      const parts: Part[] = [{ kind: "text", text: '{"key": "value"}' }];
+      const parts: Part[] = [Part.fromJSON({ text: '{"key": "value"}' })];
       const descriptor = { module_id: "test", input_schema: { type: "object", properties: {} } };
       const result = converter.partsToInput(parts, descriptor);
       expect(result).toEqual({ key: "value" });
     });
 
     it("converts TextPart with string schema to raw text", () => {
-      const parts: Part[] = [{ kind: "text", text: "hello world" }];
+      const parts: Part[] = [Part.fromJSON({ text: "hello world" })];
       const descriptor = { module_id: "test", input_schema: { type: "string" } };
       const result = converter.partsToInput(parts, descriptor);
       expect(result).toBe("hello world");
     });
 
     it("converts TextPart with no schema to raw text", () => {
-      const parts: Part[] = [{ kind: "text", text: "hello" }];
+      const parts: Part[] = [Part.fromJSON({ text: "hello" })];
       const result = converter.partsToInput(parts, null);
       expect(result).toBe("hello");
     });
 
     it("throws on invalid JSON for object schema", () => {
-      const parts: Part[] = [{ kind: "text", text: "not json" }];
+      const parts: Part[] = [Part.fromJSON({ text: "not json" })];
       const descriptor = { module_id: "test", input_schema: { type: "object", properties: {} } };
       expect(() => converter.partsToInput(parts, descriptor)).toThrow("not valid JSON");
     });
 
     it("converts DataPart to its data", () => {
-      const parts: Part[] = [{ kind: "data", data: { foo: "bar" } }];
+      const parts: Part[] = [Part.fromJSON({ data: { foo: "bar" } })];
       const result = converter.partsToInput(parts, null);
       expect(result).toEqual({ foo: "bar" });
     });
 
     it("throws on FilePart", () => {
-      const parts: Part[] = [{ kind: "file", file: { uri: "http://example.com/f" } }];
+      const parts: Part[] = [Part.fromJSON({ url: "http://example.com/f" })];
       expect(() => converter.partsToInput(parts, null)).toThrow("FilePart is not supported");
     });
 
@@ -48,10 +48,7 @@ describe("PartConverter", () => {
     });
 
     it("throws on multiple parts", () => {
-      const parts: Part[] = [
-        { kind: "text", text: "a" },
-        { kind: "text", text: "b" },
-      ];
+      const parts: Part[] = [Part.fromJSON({ text: "a" }), Part.fromJSON({ text: "b" })];
       expect(() => converter.partsToInput(parts, null)).toThrow("Multiple parts are not supported");
     });
   });
@@ -71,23 +68,23 @@ describe("PartConverter", () => {
     it("converts string output to TextPart", () => {
       const artifact = converter.outputToParts("hello", "task-1");
       expect(artifact.parts).toHaveLength(1);
-      expect(artifact.parts[0]).toEqual({ kind: "text", text: "hello" });
+      expect(artifact.parts[0].content).toEqual({ $case: "text", value: "hello" });
     });
 
     it("converts object output to DataPart", () => {
       const artifact = converter.outputToParts({ key: "value" }, "task-1");
       expect(artifact.parts).toHaveLength(1);
-      expect(artifact.parts[0]).toEqual({ kind: "data", data: { key: "value" } });
+      expect(artifact.parts[0].content).toEqual({ $case: "data", value: { key: "value" } });
     });
 
     it("converts array output to TextPart with JSON", () => {
       const artifact = converter.outputToParts([1, 2, 3], "task-1");
-      expect(artifact.parts[0]).toEqual({ kind: "text", text: "[1,2,3]" });
+      expect(artifact.parts[0].content).toEqual({ $case: "text", value: "[1,2,3]" });
     });
 
     it("converts number output to TextPart string", () => {
       const artifact = converter.outputToParts(42, "task-1");
-      expect(artifact.parts[0]).toEqual({ kind: "text", text: "42" });
+      expect(artifact.parts[0].content).toEqual({ $case: "text", value: "42" });
     });
 
     it("generates UUID-based artifactId when no taskId", () => {

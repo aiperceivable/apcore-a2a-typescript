@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type {
-  TaskStatusUpdateEvent,
-  TaskArtifactUpdateEvent,
-  Part,
-} from "@a2a-js/sdk";
-import type { ExecutionEventBus } from "@a2a-js/sdk/server";
+import { Part, TaskState } from "@a2a-js/sdk";
+import type { ExecutionEventBus, AgentExecutionEvent } from "@a2a-js/sdk/server";
 import { ApCoreAgentExecutor } from "../../src/server/executor.js";
 import { PartConverter } from "../../src/adapters/parts.js";
 
 import type { Registry } from "../../src/adapters/agent-card.js";
+
+/** Extract the text of a status message's first part (1.0 oneof shape). */
+function statusText(data: { status?: { message?: { parts: Part[] } } }): string | undefined {
+  const content = data.status?.message?.parts[0]?.content;
+  return content?.$case === "text" ? content.value : undefined;
+}
 
 function makeContext(opts: {
   taskId?: string;
@@ -20,10 +22,9 @@ function makeContext(opts: {
     taskId: opts.taskId ?? "task-1",
     contextId: opts.contextId ?? "ctx-1",
     userMessage: {
-      kind: "message" as const,
       messageId: "msg-1",
       role: "user" as const,
-      parts: opts.parts ?? [{ kind: "text" as const, text: '{"input":"hello"}' }],
+      parts: opts.parts ?? [Part.fromJSON({ text: '{"input":"hello"}' })],
       metadata: opts.skillId !== undefined ? { skillId: opts.skillId } : {},
     },
   };
@@ -83,19 +84,20 @@ describe("ApCoreAgentExecutor", () => {
 
       // events[0] is the initial task creation event
       expect(bus.events).toHaveLength(3);
-      const taskInit = bus.events[0] as any;
+      const taskInit = bus.events[0] as AgentExecutionEvent;
       expect(taskInit.kind).toBe("task");
-      expect(taskInit.id).toBe("task-1");
+      expect((taskInit.data as { id: string }).id).toBe("task-1");
 
-      const artifact = bus.events[1] as TaskArtifactUpdateEvent;
-      expect(artifact.kind).toBe("artifact-update");
-      expect(artifact.taskId).toBe("task-1");
-      expect(artifact.lastChunk).toBe(true);
+      const artifact = bus.events[1] as AgentExecutionEvent;
+      expect(artifact.kind).toBe("artifactUpdate");
+      expect((artifact.data as { taskId: string }).taskId).toBe("task-1");
+      expect((artifact.data as { lastChunk: boolean }).lastChunk).toBe(true);
 
-      const status = bus.events[2] as TaskStatusUpdateEvent;
-      expect(status.kind).toBe("status-update");
-      expect(status.status.state).toBe("completed");
-      expect(status.final).toBe(true);
+      const status = bus.events[2] as AgentExecutionEvent;
+      expect(status.kind).toBe("statusUpdate");
+      expect((status.data as { status: { state: TaskState } }).status.state).toBe(
+        TaskState.TASK_STATE_COMPLETED,
+      );
     });
 
     it("publishes failed when skillId is missing", async () => {
@@ -114,11 +116,9 @@ describe("ApCoreAgentExecutor", () => {
 
       // events[0] is the initial task event, events[1] is the failed status
       expect(bus.events).toHaveLength(2);
-      const event = bus.events[1] as TaskStatusUpdateEvent;
-      expect(event.status.state).toBe("failed");
-      expect(event.status.message?.parts[0]).toEqual(
-        expect.objectContaining({ text: expect.stringContaining("skillId") }),
-      );
+      const event = (bus.events[1] as AgentExecutionEvent).data as { status: { state: TaskState } };
+      expect(event.status.state).toBe(TaskState.TASK_STATE_FAILED);
+      expect(statusText(event)).toContain("skillId");
     });
 
     it("publishes failed for unknown skill", async () => {
@@ -133,11 +133,9 @@ describe("ApCoreAgentExecutor", () => {
       const bus = makeEventBus();
       await agent.execute(makeContext({ skillId: "missing-skill" }) as any, bus);
 
-      const event = bus.events[1] as TaskStatusUpdateEvent;
-      expect(event.status.state).toBe("failed");
-      expect(event.status.message?.parts[0]).toEqual(
-        expect.objectContaining({ text: expect.stringContaining("Skill not found") }),
-      );
+      const event = (bus.events[1] as AgentExecutionEvent).data as { status: { state: TaskState } };
+      expect(event.status.state).toBe(TaskState.TASK_STATE_FAILED);
+      expect(statusText(event)).toContain("Skill not found");
     });
 
     it("publishes failed on execution timeout", async () => {
@@ -156,11 +154,9 @@ describe("ApCoreAgentExecutor", () => {
       const bus = makeEventBus();
       await agent.execute(makeContext({ skillId: "test" }) as any, bus);
 
-      const event = bus.events[1] as TaskStatusUpdateEvent;
-      expect(event.status.state).toBe("failed");
-      expect(event.status.message?.parts[0]).toEqual(
-        expect.objectContaining({ text: expect.stringContaining("timed out") }),
-      );
+      const event = (bus.events[1] as AgentExecutionEvent).data as { status: { state: TaskState } };
+      expect(event.status.state).toBe(TaskState.TASK_STATE_FAILED);
+      expect(statusText(event)).toContain("timed out");
     });
 
     it("publishes input-required for APPROVAL_PENDING error", async () => {
@@ -176,9 +172,8 @@ describe("ApCoreAgentExecutor", () => {
       const bus = makeEventBus();
       await agent.execute(makeContext({ skillId: "test" }) as any, bus);
 
-      const event = bus.events[1] as TaskStatusUpdateEvent;
-      expect(event.status.state).toBe("input-required");
-      expect(event.final).toBe(false);
+      const event = (bus.events[1] as AgentExecutionEvent).data as { status: { state: TaskState } };
+      expect(event.status.state).toBe(TaskState.TASK_STATE_INPUT_REQUIRED);
     });
 
     it("publishes failed for generic execution error", async () => {
@@ -192,11 +187,9 @@ describe("ApCoreAgentExecutor", () => {
       const bus = makeEventBus();
       await agent.execute(makeContext({ skillId: "test" }) as any, bus);
 
-      const event = bus.events[1] as TaskStatusUpdateEvent;
-      expect(event.status.state).toBe("failed");
-      expect(event.status.message?.parts[0]).toEqual(
-        expect.objectContaining({ text: "Internal server error" }),
-      );
+      const event = (bus.events[1] as AgentExecutionEvent).data as { status: { state: TaskState } };
+      expect(event.status.state).toBe(TaskState.TASK_STATE_FAILED);
+      expect(statusText(event)).toBe("Internal server error");
     });
 
     it("calls onStateChange callback", async () => {
@@ -228,10 +221,11 @@ describe("ApCoreAgentExecutor", () => {
       await agent.cancelTask("task-1", bus);
 
       expect(bus.events).toHaveLength(1);
-      const event = bus.events[0] as TaskStatusUpdateEvent;
-      expect(event.kind).toBe("status-update");
-      expect(event.status.state).toBe("canceled");
-      expect(event.final).toBe(true);
+      const event = bus.events[0] as AgentExecutionEvent;
+      expect(event.kind).toBe("statusUpdate");
+      expect((event.data as { status: { state: TaskState } }).status.state).toBe(
+        TaskState.TASK_STATE_CANCELED,
+      );
     });
   });
 });
