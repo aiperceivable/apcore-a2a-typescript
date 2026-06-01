@@ -138,9 +138,21 @@ describe("ErrorMapper", () => {
 
   describe("message sanitization (via toJsonRpcError)", () => {
     it("strips Unix absolute paths from error messages", () => {
-      const err = createApcoreError("MODULE_NOT_FOUND", "Error at /home/user/file.py line 10");
+      const err = createApcoreError("MODULE_NOT_FOUND", "Error at /home/user/file.py here");
       const result = mapper.toJsonRpcError(err);
-      expect(result.message).toBe("Error at line 10");
+      expect(result.message).toBe("Error at here");
+    });
+
+    it("strips traceback lines (Traceback, File, line N) from error messages", () => {
+      const err = createApcoreError(
+        "MODULE_NOT_FOUND",
+        'Field x is required\nTraceback (most recent call last):\n  File "/a/b.py", line 5, in foo\n    raise X',
+      );
+      const result = mapper.toJsonRpcError(err);
+      expect(result.message).not.toContain("Traceback");
+      expect(result.message).not.toContain("File");
+      expect(result.message).not.toContain("line 5");
+      expect(result.message).toContain("Field x is required");
     });
 
     it("strips tilde paths from error messages", () => {

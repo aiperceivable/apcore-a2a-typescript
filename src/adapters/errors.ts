@@ -79,6 +79,10 @@ export class ErrorMapper {
   }
 
   private sanitizeMessage(message: string): string {
-    return message.replace(/~?\/\S*/g, "").replace(/\s+/g, " ").trim().slice(0, 500);
+    // Strip file paths (Unix absolute paths and ~ paths)
+    let sanitized = message.replace(/~?\/\S*/g, "");
+    // Strip traceback lines (matching Python's behavior)
+    sanitized = sanitized.replace(/^.*(?:Traceback|File "|line \d+).*$/gm, "");
+    return sanitized.replace(/\s+/g, " ").trim().slice(0, 500);
   }
 }
