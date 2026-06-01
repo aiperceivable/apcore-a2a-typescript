@@ -89,8 +89,8 @@ Payload:
 ```bash
 TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJkZW1vLXVzZXIiLCJ0eXBlIjoidXNlciIsInJvbGVzIjpbImFkbWluIl19.yOFQMlZnMZwXg6KoJX61sCm2VbCzmqtT8dFRNsOhaZM"
 
-# Agent Card endpoint is exempt from auth
-curl http://localhost:8000/.well-known/agent.json
+# Agent Card endpoint is exempt from auth (0.3 alias: /.well-known/agent.json)
+curl http://localhost:8000/.well-known/agent-card.json
 
 # Health endpoint is exempt from auth
 curl http://localhost:8000/health

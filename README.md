@@ -24,7 +24,7 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 ## Features
 
 - **One-call server** — launch a compliant A2A server with `serve(registry)`
-- **Automatic Agent Card** — `/.well-known/agent.json` generated from module metadata
+- **Automatic Agent Card** — `/.well-known/agent-card.json` (A2A 1.0 primary; `/.well-known/agent.json` 0.3 alias) generated from module metadata
 - **Skill mapping** — apcore modules become A2A Skills with names, descriptions, tags, and examples; `metadata.display.a2a` overrides surface-facing fields (§5.13)
 - **Full task lifecycle** — submitted, working, completed, failed, canceled, input-required
 - **SSE streaming** — `message/stream` with real-time status and artifact updates
@@ -39,7 +39,7 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 ## Requirements
 
 - Node.js >= 18.0.0
-- `apcore-js` >= 0.15.1
+- `apcore-js` >= 0.22.0
 
 ---
 
@@ -61,10 +61,13 @@ import { serve } from "apcore-a2a";
 
 const registry = new Registry({ extensionsDir: "./extensions" });
 
+// Discover modules before serving (requires top-level await or an async function)
+await registry.discover();
+
 serve(registry); // Starts on http://0.0.0.0:8000
 ```
 
-Your agent is now live at `http://localhost:8000/.well-known/agent.json`.
+Your agent is now live at `http://localhost:8000/.well-known/agent-card.json` (the A2A 1.0 primary endpoint; `/.well-known/agent.json` is also served as the 0.3 alias).
 
 ### CLI (zero-code)
 
