@@ -87,7 +87,10 @@ export class AgentCardBuilder {
     const skills: AgentSkill[] = [];
     for (const moduleId of registry.list()) {
       const descriptor = registry.getDefinition(moduleId);
-      if (!descriptor?.description) continue;
+      if (!descriptor?.description?.trim()) {
+        console.warn(`Skipping module ${moduleId}: missing description`);
+        continue;
+      }
       const skill = this.skillMapper.toSkill(descriptor, moduleId);
       if (skill) skills.push(skill);
     }

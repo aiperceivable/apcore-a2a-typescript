@@ -61,6 +61,17 @@ describe("AgentCardBuilder", () => {
       expect(card.skills![0].id).toBe("has.desc");
     });
 
+    it("skips modules with whitespace-only description", () => {
+      const registry = createRegistry({
+        "has.desc": { description: "Has description" },
+        "blank.desc": { description: "   " },
+      });
+
+      const card = builder.build(registry, baseOpts);
+      expect(card.skills).toHaveLength(1);
+      expect(card.skills![0].id).toBe("has.desc");
+    });
+
     it("sets default input/output modes", () => {
       const registry = createRegistry({ ping: { description: "Ping" } });
       const card = builder.build(registry, baseOpts);

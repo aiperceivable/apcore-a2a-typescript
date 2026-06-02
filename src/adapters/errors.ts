@@ -18,6 +18,11 @@ export class ErrorMapper {
   }
 
   toJsonRpcError(error: unknown): JsonRpcError {
+    // Sanitization rule 4: log the full, unsanitized error at ERROR level for
+    // server-side diagnostics before any sanitization is applied (matches the
+    // Python binding).
+    console.error("Mapping error to JSON-RPC error:", error);
+
     if (error instanceof Error) {
       const code = (error as { code?: string }).code;
 

@@ -40,7 +40,7 @@ export class JWTAuthenticator implements Authenticator {
   }
 
   authenticate(headers: Record<string, string>): Identity | null {
-    const authHeader = headers.authorization ?? headers.Authorization ?? "";
+    const authHeader = headers.authorization ?? "";
     if (!authHeader.toLowerCase().startsWith("bearer ")) return null;
 
     const token = authHeader.slice(7).trim();

@@ -28,6 +28,7 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 - **Skill mapping** — apcore modules become A2A Skills with names, descriptions, tags, and examples; `metadata.display.a2a` overrides surface-facing fields (§5.13)
 - **Full task lifecycle** — submitted, working, completed, failed, canceled, input-required
 - **SSE streaming** — `message/stream` with real-time status and artifact updates
+- **Push notifications** — optional webhook delivery of task state changes
 - **JWT authentication** — tokens bridged to apcore's Identity context
 - **A2A Explorer UI** — browser UI for discovering and testing skills, with auth bar and cURL generation
 - **Built-in client** — `A2AClient` for calling remote A2A agents
@@ -96,14 +97,12 @@ const card = await client.discover();
 console.log(`Agent: ${card.name}, Skills: ${card.skills.length}`);
 
 // Send a message
-const task = await client.sendMessage(
-  { role: "user", parts: [{ kind: "text", text: "hello" }] },
-  { contextId: "ctx-1" },
-);
+const message = { role: "user", parts: [{ kind: "text", text: "hello" }] };
+const task = await client.sendMessage(message, { contextId: "ctx-1" });
 console.log(`Result: ${task.status.state}`);
 
 // Or stream the response
-for await (const event of client.streamMessage(message)) {
+for await (const event of client.streamMessage(message, { contextId: "ctx-1" })) {
   console.log(event);
 }
 
@@ -176,7 +175,7 @@ const app = await asyncServe(registryOrExecutor, options);
 Default in-memory task store. Implement the `TaskStore` interface (`save`, `load`) for persistent backends.
 
 ```typescript
-import { InMemoryTaskStore } from "apcore-a2a/storage";
+import { InMemoryTaskStore } from "@a2a-js/sdk/server";
 
 const store = new InMemoryTaskStore();
 serve(registry, { taskStore: store });

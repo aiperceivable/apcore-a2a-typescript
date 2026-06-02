@@ -66,12 +66,14 @@ describe("JWTAuthenticator", () => {
       expect(auth.authenticate(headers(token))).toBeNull();
     });
 
-    it("handles case-insensitive Authorization header", () => {
+    it("returns null for capitalized-only Authorization header key", () => {
+      // Headers are lowercase-keyed per the spec contract; Python and Rust
+      // siblings read only "authorization". A token under a capitalized-only
+      // "Authorization" key must NOT authenticate (cross-language parity).
       const auth = new JWTAuthenticator(SECRET);
       const token = makeToken({ sub: "user-1" });
       const identity = auth.authenticate({ Authorization: `Bearer ${token}` });
-      expect(identity).not.toBeNull();
-      expect(identity!.id).toBe("user-1");
+      expect(identity).toBeNull();
     });
   });
 

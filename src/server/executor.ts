@@ -99,17 +99,24 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       return;
     }
 
-    // 3. Validate skill exists in registry
+    // 3. Validate skill exists in registry. Spec: "Validate skill_id is a known
+    // module -> error -32601 if not". Fail CLOSED: if the registry lookup throws
+    // or the skill is not found, publish a failed task (matches Python/Rust).
     if (this.registry) {
+      let known: string[];
       try {
-        const known = this.registry.list();
-        if (!known.includes(skillId)) {
-          this.notify("submitted", "failed");
-          this.publishFailed(context, eventBus, `Skill not found: ${skillId}`);
-          return;
-        }
+        known = this.registry.list();
       } catch {
-        // Registry may be unavailable; proceed optimistically
+        // Registry unavailable: cannot confirm the skill, so fail closed rather
+        // than proceeding optimistically.
+        this.notify("submitted", "failed");
+        this.publishFailed(context, eventBus, `Skill not found: ${skillId}`);
+        return;
+      }
+      if (!known.includes(skillId)) {
+        this.notify("submitted", "failed");
+        this.publishFailed(context, eventBus, `Skill not found: ${skillId}`);
+        return;
       }
     }
 
@@ -200,9 +207,6 @@ export class ApCoreAgentExecutor implements AgentExecutor {
         this.publishCompleted(context, eventBus);
       }
     } catch (e: unknown) {
-      // Clean up cancel token on any exit
-      this.cancelTokens.delete(context.taskId);
-
       if (e instanceof TimeoutError) {
         this.notify("working", "failed");
         this.publishFailed(context, eventBus, "Execution timed out");
@@ -229,10 +233,11 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       this.notify("working", "failed");
       this.publishFailed(context, eventBus, "Internal server error");
       return;
+    } finally {
+      // Clean up the cancel token on every exit path (matches Python's
+      // finally / Rust's Drop guard).
+      this.cancelTokens.delete(context.taskId);
     }
-
-    // Clean up cancel token on successful completion
-    this.cancelTokens.delete(context.taskId);
   }
 
   /**
@@ -259,7 +264,32 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       ? streamFn.call(this.executor, moduleId, inputs, apcoreCtx)
       : streamFn.call(this.executor, moduleId, inputs);
 
-    for await (const chunk of gen) {
+    // A-D-13: bound the entire streaming loop by a host-side wall-clock budget.
+    // apcore's cooperative global_deadline only stops well-behaved modules
+    // between chunks; this Promise.race guarantees the loop terminates even if
+    // the generator stalls (matches Rust's stream_channel tokio timeout). The
+    // deadline spans the whole stream, not just a single chunk.
+    const deadline = Date.now() + this.executionTimeoutMs;
+    const iterator = gen[Symbol.asyncIterator]();
+    for (;;) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        await iterator.return?.(undefined);
+        throw new TimeoutError();
+      }
+      let next: IteratorResult<Record<string, unknown>>;
+      try {
+        next = await withTimeout(iterator.next(), remaining);
+      } catch (e) {
+        if (e instanceof TimeoutError) {
+          // Signal the underlying generator to stop iterating.
+          await iterator.return?.(undefined);
+        }
+        throw e;
+      }
+      if (next.done) break;
+      const chunk = next.value;
+
       const artifact = this.partConverter.outputToParts(chunk, context.taskId);
       // Override artifactId to be consistent across chunks
       const chunkArtifact: Artifact = { ...artifact, artifactId };
