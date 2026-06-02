@@ -7,6 +7,25 @@ export interface Registry {
   register?(moduleId: string, descriptor: unknown): void;
 }
 
+/**
+ * Convert a flat security-scheme dict (the shape `JWTAuthenticator.securitySchemes()`
+ * returns, e.g. `{type:"http",scheme,bearerFormat}`) into the A2A 1.0 protobuf-JSON
+ * `oneof` shape served by the reference a2a-sdk, e.g.
+ * `{httpAuthSecurityScheme:{scheme,bearerFormat}}`. This keeps the served
+ * `securitySchemes` byte-identical across the Python/TS/Rust SDKs (the proto3 JSON
+ * mapping is the canonical A2A 1.0 wire shape; the flat OpenAPI-style form is not).
+ */
+function toA2ASecurityScheme(scheme: Record<string, unknown>): Record<string, unknown> {
+  if (scheme.type === "http") {
+    const http: Record<string, unknown> = { scheme: scheme.scheme ?? "bearer" };
+    // proto3 JSON omits empty fields; only emit bearerFormat when present.
+    if (scheme.bearerFormat) http.bearerFormat = scheme.bearerFormat;
+    return { httpAuthSecurityScheme: http };
+  }
+  // Unknown scheme types map to an empty SecurityScheme (matches the Python builder).
+  return {};
+}
+
 export class AgentCardBuilder {
   private skillMapper: SkillMapper;
   private cachedCard: AgentCard | null = null;
@@ -51,7 +70,12 @@ export class AgentCardBuilder {
       },
       defaultInputModes: ["text/plain", "application/json"],
       defaultOutputModes: ["text/plain", "application/json"],
-      securitySchemes: (opts.securitySchemes ?? {}) as AgentCard["securitySchemes"],
+      securitySchemes: Object.fromEntries(
+        Object.entries(opts.securitySchemes ?? {}).map(([k, v]) => [
+          k,
+          toA2ASecurityScheme(v as Record<string, unknown>),
+        ]),
+      ) as AgentCard["securitySchemes"],
       securityRequirements: [],
       signatures: [],
     };

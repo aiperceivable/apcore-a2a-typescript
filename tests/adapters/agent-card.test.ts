@@ -93,6 +93,22 @@ describe("AgentCardBuilder", () => {
       const card = builder.build(registry, baseOpts);
       expect(card.capabilities!.extendedAgentCard).toBe(false);
     });
+
+    it("emits securitySchemes in the A2A 1.0 protobuf-JSON oneof shape", () => {
+      // A-D-201: the served card must use the proto3 `httpAuthSecurityScheme` oneof
+      // shape (canonical 1.0, byte-identical to the Python a2a-sdk), not the flat
+      // {type:"http",...} input shape that JWTAuthenticator.securitySchemes() returns.
+      const registry = createRegistry({ ping: { description: "Ping" } });
+      const card = builder.build(registry, {
+        ...baseOpts,
+        securitySchemes: {
+          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+        },
+      });
+      expect(card.securitySchemes).toEqual({
+        bearerAuth: { httpAuthSecurityScheme: { scheme: "bearer", bearerFormat: "JWT" } },
+      });
+    });
   });
 
   describe("caching", () => {

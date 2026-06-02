@@ -159,4 +159,41 @@ describe("JWTAuthenticator", () => {
       });
     });
   });
+
+  describe("claim coercion (canonical, strict)", () => {
+    it("rejects a non-scalar sub claim", () => {
+      // A-D-101: an array/object sub is not a valid id — reject, do not coerce.
+      const auth = new JWTAuthenticator(SECRET);
+      expect(auth.authenticate(headers(makeToken({ sub: [1, 2] })))).toBeNull();
+      expect(auth.authenticate(headers(makeToken({ sub: { a: 1 } })))).toBeNull();
+    });
+
+    it("coerces a numeric sub claim to a string", () => {
+      const auth = new JWTAuthenticator(SECRET);
+      const identity = auth.authenticate(headers(makeToken({ sub: 12345 })));
+      expect(identity!.id).toBe("12345");
+    });
+
+    it("falls back to 'user' for a null type claim", () => {
+      // A-D-102
+      const auth = new JWTAuthenticator(SECRET);
+      const identity = auth.authenticate(headers(makeToken({ sub: "u", type: null })));
+      expect(identity!.type).toBe("user");
+    });
+
+    it("preserves an empty-string type claim", () => {
+      const auth = new JWTAuthenticator(SECRET);
+      const identity = auth.authenticate(headers(makeToken({ sub: "u", type: "" })));
+      expect(identity!.type).toBe("");
+    });
+
+    it("drops non-scalar role elements and coerces scalars", () => {
+      // A-D-103
+      const auth = new JWTAuthenticator(SECRET);
+      const identity = auth.authenticate(
+        headers(makeToken({ sub: "u", roles: ["admin", 7, null, ["x"], { k: 1 }] })),
+      );
+      expect(identity!.roles).toEqual(["admin", "7"]);
+    });
+  });
 });

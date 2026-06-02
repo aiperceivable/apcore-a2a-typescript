@@ -17,6 +17,20 @@ export interface JWTAuthenticatorOptions {
   requireClaims?: string[];
 }
 
+/**
+ * Coerce a JWT claim value to a string using the canonical cross-language rule.
+ *
+ * Mirrors the Rust SDK's `claim_to_string` (the agreed-upon canonical behaviour):
+ * strings pass through, numbers and booleans are stringified, and null/arrays/objects
+ * are rejected (return null). Keeps the three SDKs in agreement on whether a malformed
+ * (non-scalar) claim is accepted and on the exact string an accepted claim produces.
+ */
+function claimToString(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
 export class JWTAuthenticator implements Authenticator {
   private key: string;
   private algorithms: jwt.Algorithm[];
@@ -79,18 +93,24 @@ export class JWTAuthenticator implements Authenticator {
 
   private payloadToIdentity(payload: Record<string, unknown>): Identity | null {
     const mapping = this.claimMapping;
-    const identityId = payload[mapping.idClaim];
-    if (identityId == null) return null;
+    // The id claim must coerce to a scalar string, or the token is rejected
+    // (canonical rule: a non-scalar `sub` is not a valid identity id).
+    const id = claimToString(payload[mapping.idClaim]);
+    if (id === null) return null;
 
-    const identityType = String(payload[mapping.typeClaim] ?? "user");
+    // Only an absent/null/non-scalar type falls back to "user"; an explicit
+    // empty-string type is preserved (parity with Rust unwrap_or_else / Python).
+    const identityType = claimToString(payload[mapping.typeClaim]) ?? "user";
     const rawRoles = payload[mapping.rolesClaim];
-    const roles = Array.isArray(rawRoles) ? rawRoles.map(String) : [];
+    const roles = Array.isArray(rawRoles)
+      ? rawRoles.map(claimToString).filter((r): r is string => r !== null)
+      : [];
 
     const attrs: Record<string, unknown> = {};
     for (const claim of mapping.attrsClaims) {
       if (claim in payload) attrs[claim] = payload[claim];
     }
 
-    return createIdentity(String(identityId), identityType, roles, attrs);
+    return createIdentity(id, identityType, roles, attrs);
   }
 }
