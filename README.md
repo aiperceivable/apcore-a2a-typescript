@@ -240,8 +240,8 @@ See [`examples/README.md`](examples/README.md) for details on class-based vs pro
 ```bash
 git clone https://github.com/aiperceivable/apcore-a2a-typescript.git
 cd apcore-a2a-typescript
-npm install
-npm test
+pnpm install
+pnpm test
 ```
 
 ## Documentation
