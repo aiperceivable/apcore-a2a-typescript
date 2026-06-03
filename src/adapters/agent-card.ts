@@ -64,10 +64,11 @@ export class AgentCardBuilder {
       ],
       provider: undefined,
       skills,
-      capabilities: {
-        ...opts.capabilities,
-        extendedAgentCard: opts.securitySchemes != null,
-      },
+      // extendedAgentCard is decided by the caller (the factory sets it to
+      // `auth != null`, matching Python/Rust). Do not derive it from
+      // securitySchemes — that diverges for a custom authenticator that
+      // returns no schemes while auth is configured.
+      capabilities: opts.capabilities,
       defaultInputModes: ["text/plain", "application/json"],
       defaultOutputModes: ["text/plain", "application/json"],
       securitySchemes: Object.fromEntries(

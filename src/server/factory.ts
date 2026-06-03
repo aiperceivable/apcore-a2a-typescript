@@ -175,6 +175,10 @@ export class A2AServerFactory {
       streaming: true,
       pushNotifications: opts.pushNotifications ?? false,
       extensions: [],
+      // Offered whenever an authenticator is configured (Python/Rust parity:
+      // extended_agent_card = auth is not None), independent of whether the
+      // authenticator returns any security schemes.
+      extendedAgentCard: opts.auth != null,
     };
 
     // Build AgentCard

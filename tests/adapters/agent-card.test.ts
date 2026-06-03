@@ -79,19 +79,27 @@ describe("AgentCardBuilder", () => {
       expect(card.defaultOutputModes).toEqual(["text/plain", "application/json"]);
     });
 
-    it("sets capabilities.extendedAgentCard when securitySchemes provided", () => {
+    it("takes extendedAgentCard from caller capabilities, not securitySchemes (D10-001)", () => {
+      // Regression: extendedAgentCard must come from the caller's capabilities
+      // (the factory sets it to `auth != null`, Python/Rust parity), NOT from
+      // whether securitySchemes happen to be present. A custom authenticator can
+      // configure auth while returning no security schemes.
       const registry = createRegistry({ ping: { description: "Ping" } });
-      const card = builder.build(registry, {
+
+      // auth configured (extended=true) but no securitySchemes → stays true.
+      const cardTrue = builder.build(registry, {
         ...baseOpts,
+        capabilities: { ...defaultCapabilities, extendedAgentCard: true },
+      });
+      expect(cardTrue.capabilities!.extendedAgentCard).toBe(true);
+
+      // no auth (extended=false) but securitySchemes present → stays false.
+      const cardFalse = builder.build(registry, {
+        ...baseOpts,
+        capabilities: { ...defaultCapabilities, extendedAgentCard: false },
         securitySchemes: { bearerAuth: { type: "http", scheme: "bearer" } },
       });
-      expect(card.capabilities!.extendedAgentCard).toBe(true);
-    });
-
-    it("sets capabilities.extendedAgentCard to false without securitySchemes", () => {
-      const registry = createRegistry({ ping: { description: "Ping" } });
-      const card = builder.build(registry, baseOpts);
-      expect(card.capabilities!.extendedAgentCard).toBe(false);
+      expect(cardFalse.capabilities!.extendedAgentCard).toBe(false);
     });
 
     it("emits securitySchemes in the A2A 1.0 protobuf-JSON oneof shape", () => {
