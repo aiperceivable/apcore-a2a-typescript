@@ -165,7 +165,7 @@ describe("A2AClient", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            error: { code: -32603, message: "Internal error" },
+            error: { code: -32603, message: "Internal server error" },
           }),
       });
 

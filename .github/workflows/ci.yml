@@ -13,6 +13,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout apcore-a2a spec repo (conformance fixtures)
+        uses: actions/checkout@v4
+        with:
+          repository: aiperceivable/apcore-a2a
+          path: .apcore-a2a-spec
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -40,3 +46,7 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+        env:
+          # Conformance runners (tests/conformance/) load shared fixtures from the
+          # spec repo checked out above; they skip if it is absent.
+          APCORE_A2A_SPEC_REPO: ${{ github.workspace }}/.apcore-a2a-spec
