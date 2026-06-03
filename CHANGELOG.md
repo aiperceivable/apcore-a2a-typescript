@@ -5,17 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.1] - 2026-06-03
-
-### Added
-
-- Conformance test suite (`tests/conformance/`) mirroring the shared cross-language fixtures.
-- `LICENSE` (Apache-2.0).
-
-### Removed
-
-- Vestigial npm `package-lock.json` — the repo is pnpm-managed; `pnpm-lock.yaml` is authoritative and correctly pins `@a2a-js/sdk 1.0.0-alpha.0`.
-
 ## [0.4.0] - 2026-06-01
 
 ### Changed
@@ -40,7 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`agentCard`** getter on `A2AClient` — equivalent to Python's `agent_card` async property.
 - **`VERSION` constant** exported from top-level `index.ts`.
 - **Top-level re-exports** — `AgentCardBuilder`, `SkillMapper`, `SchemaConverter`, `ErrorMapper`, `PartConverter`, `A2AServerFactory`, `ApCoreAgentExecutor`, `createAuthMiddleware`, `authIdentityStore`, `getAuthIdentity` now exported from `"apcore-a2a"`.
-- A2A 1.0 migration covered by the full suite — **257 tests passing**.
+- **`extendedAgentCard`** derived from authenticator presence (not from the presence of `securitySchemes`), matching the Python/Rust SDKs.
+- **Cross-language conformance suite** (`tests/conformance/`) mirroring the shared fixtures, and an Apache-2.0 **`LICENSE`**.
+- A2A 1.0 migration covered by the full suite (incl. conformance) — **306 tests passing**.
 
 ---
 
