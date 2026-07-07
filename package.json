@@ -1,6 +1,6 @@
 {
   "name": "apcore-a2a",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Automatic A2A Protocol Adapter for apcore Module Registry",
   "type": "module",
   "main": "./dist/index.js",
@@ -33,7 +33,7 @@
   "dependencies": {
     "@a2a-js/sdk": ">=1.0.0-alpha.0",
     "apcore-js": ">=0.25.0",
-    "apcore-toolkit": ">=0.9.1",
+    "apcore-toolkit": "^0.10.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.3",
     "uuid": "^13.0.0"
