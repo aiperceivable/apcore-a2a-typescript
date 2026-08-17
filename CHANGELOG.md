@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Required runtime bumped to `apcore-js >= 0.27.0` (from `>=0.26.0`). All six
+  0.27.0 breaking changes were checked against this adapter; none of them
+  reaches it, and all 306 pre-existing tests pass unmodified against 0.27.0.
+
+  - **`PIPELINE_CONFIG_INVALID` renamed to `PIPELINE_CONFIGURATION_ERROR`** —
+    this is the apcore-js half of the three-way split (apcore-rust renamed
+    `CONFIGURATION_ERROR`; apcore-python already emitted the new code). The
+    `ConfigurationError` class name is unchanged. `ErrorMapper` never
+    referenced either code — a config error reaches it through
+    `CONFIG_NAMESPACE_DUPLICATE` / `CONFIG_MOUNT_ERROR` / `CONFIG_BIND_ERROR`,
+    which are untouched.
+  - **`obs.redaction.sensitive_keys` replaces rather than merges the defaults**
+    — an explicitly empty list now disables key-based redaction instead of
+    falling back to the shipped 16 entries. The adapter configures no
+    redaction and never constructs a `RedactionConfig`.
+  - **Boolean coercion narrowed to exactly `"true"` / `"false"`,
+    case-sensitive** — applies to `new SchemaValidator(true)`. The adapter
+    never constructs a `SchemaValidator`; its own `SchemaConverter` translates
+    JSON Schema for the Agent Card and does not coerce values. The JWT claim
+    coercion in `auth/jwt.ts` is this adapter's own code and is unaffected.
+  - **Unknown `pipeline.configure` keys are now a parse error** — the adapter
+    declares no pipeline and calls no `buildStrategyFromConfig`.
+  - **`_config.strict` rejects undeclared framework keys** — scoped to the
+    `apcore` namespace's own framework sections. The adapter registers its
+    settings under the separate, declared `apcore-a2a` namespace
+    (`Config.registerNamespace` in `server/factory.ts`), which strict mode
+    does not police.
+  - **`afterStep` now fires after a recovered step body** — the adapter
+    installs no step middleware. It calls `executor.use(...)` only with
+    apcore's own `ObsLoggingMiddleware` / `ErrorHistoryMiddleware`, which are
+    call middleware, not step middleware.
+
 ## [0.4.4] - 2026-07-14
 
 Patch release. Bumps the required `apcore-js` floor to `0.26.0` to align the ecosystem on the 0.26.0 governance layer (additive, no breaking changes). No code or API changes.
