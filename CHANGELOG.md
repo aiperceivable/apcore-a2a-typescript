@@ -55,6 +55,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raises `ConfigError` / `CONFIG_INVALID` for it, which the catch-all already
   masks.
 
+### Security
+
+- **All six task-addressed methods are scoped to the authenticated principal** —
+  `GetTask` / `ListTasks` / `CancelTask` and
+  `Create|Get|List|DeleteTaskPushNotificationConfig`. `ListTasks` previously
+  returned every caller's tasks including their output; a task could be read or
+  cancelled by id from any caller; and a principal holding another's task id
+  could redirect that task's terminal `statusUpdate` to a webhook of its
+  choosing, or silently suppress the owner's notifications by deleting their
+  config. Only the unguessability of a UUIDv4 task id stood in the way. Ported
+  from the same fix in apcore-a2a-rust; `aiperceivable/apexe#34`.
+
+  a2a-js already had the machinery: `InMemoryTaskStore` and
+  `InMemoryPushNotificationStore` bucket by `ownerResolver(context)` — default
+  `resolveUserScope`, i.e. `context.user?.userName` — and
+  `DefaultRequestHandler` loads the task from that context-scoped store before
+  every task-addressed method, throwing `TaskNotFoundError` when it is not
+  visible. It was inert because the JSON-RPC and REST handlers were mounted with
+  `UserBuilder.noAuthentication`, so every request carried an
+  `UnauthenticatedUser`. Both are now mounted with `identityUserBuilder`, which
+  resolves the principal from the `Identity` that `createAuthMiddleware` puts in
+  its `AsyncLocalStorage`.
+
+  Cross-principal access is masked as `-32001 Task not found` — the same code
+  and the same message shape as an unknown id, both a pure function of the id
+  the caller itself supplied, so task ids cannot be probed (srs FR-ERR-003).
+
+  Callers with no `Identity` share a single owner bucket, as a2a-js's
+  `UnauthenticatedUser` does — that covers both "no authenticator configured"
+  and "an authenticator configured with `requireAuth: false` that did not
+  authenticate this request". Single-tenant deployments are unaffected;
+  configuring auth is what turns scoping on, and a permissive-mode deployment
+  gets scoping only between authenticated callers.
+
+  **Behaviour change for a custom `taskStore`.** Unlike the Rust binding, which
+  holds ownership in a process-local map beside the store and fails *closed*,
+  ownership here lives inside the store itself. Two consequences follow, and
+  they point in opposite directions:
+
+  - a store that persists the owner alongside the task keeps scoping across a
+    restart — the caveat the Rust binding had to disclose does not apply, and no
+    ownership map is retained beside the store, so nothing unbounded is
+    introduced either.
+  - **A consumer-supplied `TaskStore` that ignores its `ServerCallContext`
+    argument disables scoping entirely** and fails *open*: every caller sees
+    every caller's tasks, exactly as before. Upstream states the requirement as
+    a SHOULD on the `TaskStore` contract ("implementations SHOULD use ... the
+    authenticated caller's identity to scope data access"), so it cannot be
+    enforced from here. Deployments passing `taskStore` must confirm their store
+    scopes by `ownerResolver`.
+
+  Not covered: `SendMessage` / `SendStreamingMessage` are not task-addressed and
+  are unchanged; `SubscribeToTask` reaches the same context-scoped handler and
+  inherits the scoping, but has no test here.
+
 ### Added
 
 - `isServerSideSchemaError`, `carriesCallerDetail` and `sanitizeMessage` are now

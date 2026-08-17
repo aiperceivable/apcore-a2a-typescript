@@ -5,15 +5,9 @@ import {
   DefaultRequestHandler,
   DefaultExecutionEventBusManager,
   InMemoryTaskStore,
-  ServerCallContext,
   type TaskStore,
 } from "@a2a-js/sdk/server";
-import {
-  jsonRpcHandler,
-  agentCardHandler,
-  UserBuilder,
-  restHandler,
-} from "@a2a-js/sdk/server/express";
+import { jsonRpcHandler, agentCardHandler, restHandler } from "@a2a-js/sdk/server/express";
 
 import {
   Config,
@@ -31,6 +25,7 @@ import { PartConverter } from "../adapters/parts.js";
 import { ErrorMapper } from "../adapters/errors.js";
 import { ApCoreAgentExecutor } from "./executor.js";
 import { createAuthMiddleware } from "../auth/middleware.js";
+import { anonymousContext, identityUserBuilder } from "./context.js";
 import { createExplorerRouter } from "../explorer/handler.js";
 import type { Authenticator } from "../auth/types.js";
 
@@ -95,6 +90,18 @@ export interface A2AServerCreateOptions {
   description: string;
   version: string;
   url: string;
+  /**
+   * Custom task store. Participates in *enforcement*, not just storage: every
+   * task-addressed method is scoped to the authenticated principal by the
+   * store's own owner resolution, driven by the `ServerCallContext` this
+   * factory builds from the authenticated `Identity`.
+   *
+   * **A store that ignores its `ServerCallContext` argument disables task
+   * scoping entirely** -- every caller sees every caller's tasks. a2a-js's
+   * `InMemoryTaskStore` scopes by `ownerResolver`; a third-party store must do
+   * the same. Upstream states the requirement as a SHOULD on the `TaskStore`
+   * contract, so it cannot be enforced here.
+   */
   taskStore?: TaskStore;
   auth?: Authenticator;
   executionTimeout?: number;
@@ -275,12 +282,16 @@ export class A2AServerFactory {
       agentCardHandler({ agentCardProvider: requestHandler }),
     );
 
-    // JSON-RPC endpoint
+    // JSON-RPC endpoint.
+    // userBuilder: bind the authenticated principal to the ServerCallContext so
+    // a2a-js's owner-scoped stores scope every task-addressed method to its
+    // owner. With UserBuilder.noAuthentication every caller shared the
+    // UnauthenticatedUser bucket and tasks/list returned every caller's tasks.
     app.post(
       "/",
       jsonRpcHandler({
         requestHandler,
-        userBuilder: UserBuilder.noAuthentication,
+        userBuilder: identityUserBuilder,
       }),
     );
 
@@ -288,7 +299,7 @@ export class A2AServerFactory {
     app.use(
       restHandler({
         requestHandler,
-        userBuilder: UserBuilder.noAuthentication,
+        userBuilder: identityUserBuilder,
       }),
     );
 
@@ -308,8 +319,10 @@ export class A2AServerFactory {
 
       try {
         // a2a-js 1.0 TaskStore.load requires a ServerCallContext (tenant /
-        // owner scoping); a default context is sufficient for a reachability probe.
-        await taskStore.load("__health_probe__", new ServerCallContext());
+        // owner scoping). Explicitly the anonymous owner bucket: the probe must
+        // not read a principal's tasks, and the id it asks for exists in no
+        // bucket anyway.
+        await taskStore.load("__health_probe__", anonymousContext());
       } catch {
         res.status(503).json({
           status: "unhealthy",
