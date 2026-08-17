@@ -8,8 +8,55 @@ import {
   type ExecutionEventBus,
 } from "@a2a-js/sdk/server";
 import { getAuthIdentity } from "../auth/storage.js";
+import { ErrorMapper, carriesCallerDetail, sanitizeMessage } from "../adapters/errors.js";
 import type { PartConverter } from "../adapters/parts.js";
 import type { Registry } from "../adapters/agent-card.js";
+
+/**
+ * This package's single error-redaction policy. Stateless, so one instance is
+ * shared rather than threading another constructor argument through
+ * {@link ApCoreAgentExecutorOptions}.
+ */
+const errorMapper = new ErrorMapper();
+
+/**
+ * Caller-facing text for a FAILED task status.
+ *
+ * Delegates to {@link ErrorMapper} so the task-status surface classifies exactly
+ * like the JSON-RPC surface instead of collapsing every code to one string:
+ *
+ * - internal / unrecognized errors keep the fixed `"Internal server error"`
+ *   (srs FR-ERR-004 / FR-ERR-008, locked by the shared `error_mapping.json` and
+ *   `streaming_events.json` fixtures);
+ * - `ACL_DENIED` stays masked as `"Task not found"` (srs FR-ERR-003);
+ * - caller-fixable classes (schema validation, invalid input, unknown module)
+ *   carry their sanitized detail, which srs FR-ERR-002 requires precisely so a
+ *   caller "can correct their input without guessing".
+ *
+ * For those detail-carrying classes the error's `aiGuidance` is appended when
+ * apcore supplied one: it exists to tell an agent what to do next, and an A2A
+ * caller sees only this status message. It is withheld for every other class,
+ * where the message is a fixed per-class string that must stay fixed.
+ *
+ * The gate is {@link carriesCallerDetail} -- the same partition `ErrorMapper`
+ * itself branches on. Gating on `error.userFixable` instead would be a different
+ * partition: six apcore codes are `userFixable === true` yet fall into the
+ * mapper's catch-all, so e.g. a `DEPENDENCY_NOT_FOUND` failure would send the
+ * caller `"Internal server error (module 'x' requires 'y' >= 2.1; ...)"` -- the
+ * deliberately-opaque string extended with dependency-graph detail that
+ * {@link sanitizeMessage} does not strip (it removes only paths and
+ * traceback-shaped lines, not module ids, versions, env-var names or
+ * hostnames). `userFixable` is settable per-error by the module author, so any
+ * module could widen the fixed string further.
+ */
+function failureText(error: unknown): string {
+  const message = errorMapper.toJsonRpcError(error).message;
+  const guidance = (error as { aiGuidance?: unknown } | null)?.aiGuidance;
+  if (carriesCallerDetail(error) && typeof guidance === "string" && guidance.trim() !== "") {
+    return `${message} (${sanitizeMessage(guidance)})`;
+  }
+  return message;
+}
 
 function utcNow(): string {
   return new Date().toISOString();
@@ -231,7 +278,7 @@ export class ApCoreAgentExecutor implements AgentExecutor {
       }
       console.error(`Execution failed for task ${context.taskId} skill ${skillId}:`, e);
       this.notify("working", "failed");
-      this.publishFailed(context, eventBus, "Internal server error");
+      this.publishFailed(context, eventBus, failureText(e));
       return;
     } finally {
       // Clean up the cancel token on every exit path (matches Python's

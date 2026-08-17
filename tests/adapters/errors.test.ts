@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { ErrorMapper } from "../../src/adapters/errors.js";
+import { ErrorCodes, ModuleError, SchemaValidationError } from "apcore-js";
+import {
+  ErrorMapper,
+  carriesCallerDetail,
+  isServerSideSchemaError,
+} from "../../src/adapters/errors.js";
 
 function createApcoreError(code: string, message: string): Error {
   const err = new Error(message);
@@ -173,5 +178,74 @@ describe("ErrorMapper", () => {
       const result = mapper.toJsonRpcError(err);
       expect(result.message).toBe("Field 'name' is required");
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Message-widening policy (apexe #33)
+// ---------------------------------------------------------------------------
+
+describe("message-widening policy", () => {
+  const mapper = new ErrorMapper();
+
+  it("errorMapper message policy matches toJsonRpcError", () => {
+    // carriesCallerDetail is what gates message widening (see failureText in
+    // server/executor.ts), so it must name exactly the codes whose own message
+    // toJsonRpcError actually forwards. Asserted over every apcore error code
+    // with a sentinel that survives sanitization, so adding a code or a branch
+    // cannot silently desync the two.
+    const sentinel = "canary-2f8a";
+    const codes = Object.values(ErrorCodes).filter((v): v is string => typeof v === "string");
+    expect(codes.length).toBeGreaterThan(50);
+
+    for (const code of codes) {
+      const err = new ModuleError(code, sentinel);
+      const forwarded = mapper.toJsonRpcError(err).message.includes(sentinel);
+      expect(
+        forwarded,
+        `${code}: toJsonRpcError forwards the message = ${forwarded}, ` +
+          `carriesCallerDetail = ${carriesCallerDetail(err)}`,
+      ).toBe(carriesCallerDetail(err));
+    }
+
+    // The one code whose policy is not decided by the code alone.
+    for (const message of ["Output validation failed", "Output validation failed: width"]) {
+      const err = new ModuleError(ErrorCodes.SCHEMA_VALIDATION_ERROR, message);
+      expect(carriesCallerDetail(err), message).toBe(false);
+      expect(mapper.toJsonRpcError(err).message, message).toBe("Internal server error");
+    }
+  });
+
+  it("does not report an output-validation failure as caller-fixable", () => {
+    // apcore raises SCHEMA_VALIDATION_ERROR for output validation too
+    // (builtin-steps: validateSchema(outputSchema, output, "Output")), so a
+    // module returning the wrong shape reached the caller as -32602 Invalid
+    // params -- telling them to fix a correct request, with apcore's default
+    // guidance claiming "Input validation failed" and pointing at a details
+    // field an A2A caller never receives.
+    const err = new SchemaValidationError("Output validation failed");
+    const result = mapper.toJsonRpcError(err);
+    expect(result.code).toBe(-32603);
+    expect(result.message).toBe("Internal server error");
+
+    // Input validation -- the caller-fixable direction -- is untouched, and so
+    // is a module raising the code with its own wording.
+    for (const message of ["Input validation failed", "width: must be integer"]) {
+      const out = mapper.toJsonRpcError(
+        new ModuleError(ErrorCodes.SCHEMA_VALIDATION_ERROR, message),
+      );
+      expect(out.code, message).toBe(-32602);
+      expect(out.message, message).toBe(message);
+    }
+  });
+
+  it("recognizes only the output direction as server-side", () => {
+    expect(isServerSideSchemaError("Output validation failed")).toBe(true);
+    expect(isServerSideSchemaError("Input validation failed")).toBe(false);
+    // apcore-js raises ConfigError / CONFIG_INVALID for config validation,
+    // which the mapper catch-all already masks, so no "Config" label reaches
+    // this function.
+    expect(isServerSideSchemaError("Configuration validation failed (1 error(s)):")).toBe(false);
+    expect(isServerSideSchemaError("width: must be integer")).toBe(false);
   });
 });
