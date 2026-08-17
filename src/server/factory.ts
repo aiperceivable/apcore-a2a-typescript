@@ -292,6 +292,7 @@ export class A2AServerFactory {
       jsonRpcHandler({
         requestHandler,
         userBuilder: identityUserBuilder,
+        legacyCompat: { enabled: true },
       }),
     );
 
@@ -300,6 +301,7 @@ export class A2AServerFactory {
       restHandler({
         requestHandler,
         userBuilder: identityUserBuilder,
+        legacyCompat: { enabled: true },
       }),
     );
 

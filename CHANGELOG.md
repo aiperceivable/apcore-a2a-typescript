@@ -55,6 +55,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raises `ConfigError` / `CONFIG_INVALID` for it, which the catch-all already
   masks.
 
+### Fixed
+
+- **The Explorer and the bundled `A2AClient` can talk to this package's own
+  server again.** Both speak A2A 0.3 — `message/send`, `message/stream`,
+  `tasks/get`, `tasks/cancel`, `role: "user"`, and no `A2A-Version` header —
+  and every one of those requests was refused. This is the defect
+  apcore-a2a-rust `ca10690` flagged on this repo; `aiperceivable/apexe#35`.
+
+  Two independent gates had to be opened, and each is load-bearing on its own:
+
+  - `jsonRpcHandler` and `restHandler` are now mounted with
+    `legacyCompat: { enabled: true }`, which routes the A2A 0.3 method names.
+    Without it a2a-js dispatches only the 1.0 PascalCase names (`SendMessage`,
+    `GetTask`, ...) and answers everything else `-32601`. The option does not
+    exist before `@a2a-js/sdk` 1.0.1, which is why the floor moves.
+  - The Agent Card now advertises a second `supportedInterfaces` entry — the
+    same JSONRPC binding at `protocolVersion: "0.3"`. a2a-js runs
+    `validateVersion(requestedVersion, card, "JSONRPC")` *before* dispatch on
+    both paths, and per A2A spec section 3.6.2 a request with no `A2A-Version`
+    header is a 0.3 request, so against a 1.0-only card every header-less
+    request was refused `-32009` regardless of its method name.
+
+  The 1.0 entry stays first and unchanged, so the shared `agent_card.json`
+  conformance fixture still matches and top-level `url` stays absent.
+  apcore-a2a-python needs no equivalent entry because a2a-python's
+  `enable_v0_3_compat` does not consult the card; this is the a2a-js-specific
+  price of the same acceptance, and it is what the spec's own normative method
+  table (srs Appendix B, which lists only the `message/send` / `tasks/*`
+  spellings) requires of a conforming server.
+
+### Changed
+
+- Required `@a2a-js/sdk` floor raised to `>=1.0.1` (from `>=1.0.0-alpha.0`),
+  which is what carries the v0.3 compat module used above.
+
+  **Known upstream regression in 1.0.1: every semantic A2A error on the express
+  JSON-RPC path reports `-32603` instead of its spec code.** `toJsonRpcError`
+  and the `A2AError` class are bundled separately into `dist/server/index.js`
+  and `dist/server/express/index.js`, so an error thrown by
+  `DefaultRequestHandler` (from `@a2a-js/sdk/server`) fails both `instanceof`
+  guards in the express copy and falls through to `INTERNAL_ERROR` with no
+  `data`. `TaskNotFoundError` therefore arrives as `-32603 "Task not found:
+  <id>"` rather than `-32001`; `TaskNotCancelableError` (`-32002`) and the rest
+  are affected the same way. 1.0.0-alpha.0 emitted the correct codes.
+
+  Consequences: the messages and the masking behaviour are unaffected, so the
+  task scoping above still cannot be probed; but `A2AClient` no longer raises
+  `TaskNotFoundError` / `TaskNotCancelableError` for those responses, because
+  its `JSONRPC_ERRORS` table keys on the spec codes. This adapter's own
+  `ErrorMapper` codes (`-32601` / `-32602` / `-32001` for apcore errors) are
+  produced inside this package and are unaffected. `TASK_NOT_FOUND_CODE` in
+  `tests/security/task-scoping.test.ts` pins the current value so a fixed SDK
+  shows up as a failing test rather than passing silently.
+
 ### Security
 
 - **All six task-addressed methods are scoped to the authenticated principal** —

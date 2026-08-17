@@ -61,6 +61,21 @@ export class AgentCardBuilder {
           tenant: "",
           protocolVersion: "1.0",
         },
+        // A2A 0.3 mirror of the same binding. Not decoration: a2a-js runs
+        // `validateVersion(requestedVersion, card, "JSONRPC")` before dispatch
+        // on both the v1.0 and the v0.3 compat path, and a request with no
+        // `A2A-Version` header is a 0.3 request per spec section 3.6.2 -- so
+        // without this entry every header-less request is refused -32009,
+        // including everything this package's own Explorer and A2AClient send.
+        // apcore-a2a-python needs no equivalent because a2a-python's
+        // `enable_v0_3_compat` does not consult the card; this entry is what
+        // buys apcore-a2a-typescript the same 0.3 acceptance.
+        {
+          url: opts.url,
+          protocolBinding: "JSONRPC",
+          tenant: "",
+          protocolVersion: "0.3",
+        },
       ],
       provider: undefined,
       skills,

@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@a2a-js/sdk':
-        specifier: '>=1.0.0-alpha.0'
-        version: 1.0.0-alpha.0(express@5.2.1)
+        specifier: '>=1.0.1'
+        version: 1.0.1(express@5.2.1)
       apcore-js:
         specifier: '>=0.27.0'
         version: 0.27.0
@@ -63,8 +63,8 @@ importers:
 
 packages:
 
-  '@a2a-js/sdk@1.0.0-alpha.0':
-    resolution: {integrity: sha512-2IeAMlgO4Xu1QbmNUvwyZe5F/vMzA7tiEt/1nLvCHptVpC6L7bIBUVL71fIdNi9TIGjLVz0ctVYgx8UkzpxeZA==}
+  '@a2a-js/sdk@1.0.1':
+    resolution: {integrity: sha512-CJQdh3Wzwo8qIx5UUkSJ7+7BEI16PB+MXMHHNSmx8JQsQed2HlQgvx1ENOiKUfYA3PlcEvxIwv14dBblhDuPmw==}
     engines: {node: '>=20'}
     peerDependencies:
       '@bufbuild/protobuf': ^2.10.2
@@ -1345,7 +1345,7 @@ packages:
 
 snapshots:
 
-  '@a2a-js/sdk@1.0.0-alpha.0(express@5.2.1)':
+  '@a2a-js/sdk@1.0.1(express@5.2.1)':
     dependencies:
       jose: 6.2.3
       uuid: 11.1.0

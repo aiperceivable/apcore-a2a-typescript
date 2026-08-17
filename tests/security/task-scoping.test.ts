@@ -22,6 +22,19 @@ const ALICE = "alice";
 const BOB = "bob";
 const UNKNOWN_TASK_ID = "00000000-0000-0000-0000-000000000000";
 
+/**
+ * JSON-RPC code a2a-js currently reports for `TaskNotFoundError` on the express
+ * path. The spec code is -32001, and `@a2a-js/sdk@1.0.0-alpha.0` emitted it;
+ * 1.0.1 bundles `toJsonRpcError` and the `A2AError` class separately into
+ * `dist/server/index.js` and `dist/server/express/index.js`, so the error
+ * thrown by `DefaultRequestHandler` fails both `instanceof` guards in the
+ * express copy and falls through to INTERNAL_ERROR. It affects every semantic
+ * A2A error on this path, not just this one, and the message is unaffected —
+ * so the masking property below still holds. Pinned rather than asserted as
+ * -32001 so a future SDK fix shows up as a failing test here.
+ */
+const TASK_NOT_FOUND_CODE = -32603;
+
 function makeRegistry(): Registry {
   const modules: Record<string, unknown> = {
     echo: { module_id: "echo", description: "Echo a payload back", input_schema: { type: "object" } },
@@ -115,8 +128,8 @@ describe("task scoping", () => {
       // not learn that another principal's task id exists. Both responses are a
       // pure function of the id the caller itself supplied, so task ids cannot
       // be probed.
-      expect(denied?.code).toBe(-32001);
-      expect(unknown?.code).toBe(-32001);
+      expect(denied?.code).toBe(TASK_NOT_FOUND_CODE);
+      expect(unknown?.code).toBe(TASK_NOT_FOUND_CODE);
       expect(denied?.message).toBe(`Task not found: ${aliceTask}`);
       expect(unknown?.message).toBe(`Task not found: ${UNKNOWN_TASK_ID}`);
     });
@@ -141,7 +154,8 @@ describe("task scoping", () => {
       const aliceTask = await submit(app, ALICE, "m-alice");
 
       const denied = (await rpc(app, BOB, "CancelTask", { id: aliceTask })).error;
-      expect(denied?.code).toBe(-32001);
+      expect(denied?.code).toBe(TASK_NOT_FOUND_CODE);
+      expect(denied?.message).toBe(`Task not found: ${aliceTask}`);
     });
   });
 
@@ -161,7 +175,7 @@ describe("task scoping", () => {
         taskId: aliceTask,
         pushNotificationConfig: { url: "https://attacker.example/hook" },
       });
-      expect(attacker.error?.code).toBe(-32001);
+      expect(attacker.error?.code).toBe(TASK_NOT_FOUND_CODE);
     });
 
     it("scopes get and delete to the owner", async () => {
@@ -176,10 +190,12 @@ describe("task scoping", () => {
       const params = { taskId: aliceTask, id: configId };
 
       expect((await rpc(app, ALICE, "GetTaskPushNotificationConfig", params)).error).toBeUndefined();
-      expect((await rpc(app, BOB, "GetTaskPushNotificationConfig", params)).error?.code).toBe(-32001);
+      expect((await rpc(app, BOB, "GetTaskPushNotificationConfig", params)).error?.code).toBe(
+        TASK_NOT_FOUND_CODE,
+      );
       // Deleting the owner's config would silently suppress their notifications.
       expect((await rpc(app, BOB, "DeleteTaskPushNotificationConfig", params)).error?.code).toBe(
-        -32001,
+        TASK_NOT_FOUND_CODE,
       );
       // The owner's config survived the attempt.
       expect((await rpc(app, ALICE, "GetTaskPushNotificationConfig", params)).error).toBeUndefined();
@@ -191,7 +207,7 @@ describe("task scoping", () => {
 
       expect(
         (await rpc(app, BOB, "ListTaskPushNotificationConfigs", { taskId: aliceTask })).error?.code,
-      ).toBe(-32001);
+      ).toBe(TASK_NOT_FOUND_CODE);
     });
   });
 
