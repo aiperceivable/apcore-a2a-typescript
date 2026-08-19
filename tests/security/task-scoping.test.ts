@@ -6,13 +6,14 @@
  * loads the task from that context-scoped store before every task-addressed
  * method. The handlers were mounted with `UserBuilder.noAuthentication`, so
  * every request carried an UnauthenticatedUser and every caller shared one
- * owner bucket: `tasks/list` returned every caller's tasks including their full
+ * owner bucket: `ListTasks` returned every caller's tasks including their full
  * stdout, and any principal holding another's task id could read it, cancel it,
  * or redirect its terminal statusUpdate to a webhook of its choosing.
  */
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterAll } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
+import type { Server } from "node:http";
 import { createIdentity } from "apcore-js";
 import { A2AServerFactory } from "../../src/server/factory.js";
 import type { Registry } from "../../src/adapters/agent-card.js";
@@ -70,6 +71,42 @@ function makeApp(auth?: Authenticator): Express {
   return app;
 }
 
+/**
+ * One listening server per app, reused by every request.
+ *
+ * `request(app)` starts — and tears down — a throwaway server per call. Doing
+ * that dozens of times in quick succession made roughly 1 request in 120 miss
+ * the app's middleware chain entirely and come back `404 Cannot POST /`, which
+ * surfaced as an intermittent failure of the cross-principal assertions below:
+ * an attacker request that should have been refused instead produced an empty
+ * body, so `error?.code` read as `undefined`. Measured: ~1/120 failures when
+ * each request built its own server, 0 in 600 when the server was reused.
+ * Nothing in the server code was involved — the requests never reached it.
+ */
+const servers = new WeakMap<Express, Promise<Server>>();
+const openServers: Server[] = [];
+
+function serverFor(app: Express): Promise<Server> {
+  let pending = servers.get(app);
+  if (!pending) {
+    // Awaiting `listening` matters: `listen()` binds asynchronously, and
+    // handing supertest a socket that is not up yet reintroduces the very race
+    // this helper exists to remove.
+    pending = new Promise<Server>((resolve, reject) => {
+      const server = app.listen(0);
+      openServers.push(server);
+      server.once("listening", () => resolve(server));
+      server.once("error", reject);
+    });
+    servers.set(app, pending);
+  }
+  return pending;
+}
+
+afterAll(() => {
+  for (const server of openServers) server.close();
+});
+
 type RpcResponse = { result?: Record<string, unknown>; error?: { code: number; message: string } };
 
 async function rpc(
@@ -78,7 +115,7 @@ async function rpc(
   method: string,
   params: unknown,
 ): Promise<RpcResponse> {
-  const res = await request(app)
+  const res = await request(await serverFor(app))
     .post("/")
     .set("Authorization", `Bearer ${who}`)
     // a2a-js treats a request with no A2A-Version header as v0.3 (spec section

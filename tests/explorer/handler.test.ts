@@ -1,8 +1,41 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import express from "express";
 import request from "supertest";
+import type { Express } from "express";
+import type { Server } from "node:http";
 import type { AgentCard } from "@a2a-js/sdk";
 import { createExplorerRouter } from "../../src/explorer/handler.js";
+
+/**
+ * One listening server per app, reused by every request against it.
+ *
+ * `request(await serverFor(app))` starts and tears down a throwaway server per call. Across a
+ * suite this size that made roughly 1 request in 120 miss the app's middleware
+ * chain entirely and return `404 Cannot POST /` — the intermittent
+ * `expected 404 to be 200` this file was known for. Awaiting `listening`
+ * matters too: `listen()` binds asynchronously, and handing supertest a socket
+ * that is not up yet reintroduces the same race.
+ */
+const servers = new WeakMap<Express, Promise<Server>>();
+const openServers: Server[] = [];
+
+function serverFor(app: Express): Promise<Server> {
+  let pending = servers.get(app);
+  if (!pending) {
+    pending = new Promise<Server>((resolve, reject) => {
+      const server = app.listen(0);
+      openServers.push(server);
+      server.once("listening", () => resolve(server));
+      server.once("error", reject);
+    });
+    servers.set(app, pending);
+  }
+  return pending;
+}
+
+afterAll(() => {
+  for (const server of openServers) server.close();
+});
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -107,7 +140,7 @@ describe("Explorer Router", () => {
 
     it("returns agent card with skills", async () => {
       const app = buildApp(cardWithSkills);
-      const res = await request(app).get("/explorer/agent-card");
+      const res = await request(await serverFor(app)).get("/explorer/agent-card");
 
       expect(res.status).toBe(200);
       expect(res.body.name).toBe("SkillAgent");
@@ -119,7 +152,7 @@ describe("Explorer Router", () => {
 
     it("returns full agent card structure", async () => {
       const app = buildApp(cardWithSkills);
-      const res = await request(app).get("/explorer/agent-card");
+      const res = await request(await serverFor(app)).get("/explorer/agent-card");
 
       expect(res.body.protocolVersion).toBe("0.2.1");
       expect(res.body.url).toBe("http://localhost:8000");
@@ -131,8 +164,8 @@ describe("Explorer Router", () => {
   describe("custom prefix", () => {
     it("works with custom prefix", async () => {
       const app = buildApp(minimalCard, "/tools");
-      const htmlRes = await request(app).get("/tools/");
-      const cardRes = await request(app).get("/tools/agent-card");
+      const htmlRes = await request(await serverFor(app)).get("/tools/");
+      const cardRes = await request(await serverFor(app)).get("/tools/agent-card");
 
       expect(htmlRes.status).toBe(200);
       expect(cardRes.status).toBe(200);
@@ -534,8 +567,8 @@ describe("Explorer integration with A2AServerFactory", () => {
 
   it("mounts explorer at /explorer when enabled", async () => {
     const app = await createFactoryApp(true);
-    const htmlRes = await request(app).get("/explorer/");
-    const cardRes = await request(app).get("/explorer/agent-card");
+    const htmlRes = await request(await serverFor(app)).get("/explorer/");
+    const cardRes = await request(await serverFor(app)).get("/explorer/agent-card");
 
     expect(htmlRes.status).toBe(200);
     expect(htmlRes.headers["content-type"]).toMatch(/html/);
@@ -548,15 +581,15 @@ describe("Explorer integration with A2AServerFactory", () => {
 
   it("does not mount explorer when disabled", async () => {
     const app = await createFactoryApp(false);
-    const res = await request(app).get("/explorer/");
+    const res = await request(await serverFor(app)).get("/explorer/");
 
     expect(res.status).toBe(404);
   });
 
   it("mounts explorer at custom prefix", async () => {
     const app = await createFactoryApp(true, "/ui");
-    const htmlRes = await request(app).get("/ui/");
-    const cardRes = await request(app).get("/ui/agent-card");
+    const htmlRes = await request(await serverFor(app)).get("/ui/");
+    const cardRes = await request(await serverFor(app)).get("/ui/agent-card");
 
     expect(htmlRes.status).toBe(200);
     expect(htmlRes.text).toContain("APCore A2A Agent Explorer");
@@ -566,7 +599,7 @@ describe("Explorer integration with A2AServerFactory", () => {
 
   it("explorer agent-card reflects registered skills", async () => {
     const app = await createFactoryApp(true);
-    const res = await request(app).get("/explorer/agent-card");
+    const res = await request(await serverFor(app)).get("/explorer/agent-card");
 
     expect(res.body.skills).toHaveLength(1);
     expect(res.body.skills[0].id).toBe("echo");
@@ -576,8 +609,8 @@ describe("Explorer integration with A2AServerFactory", () => {
   it("explorer coexists with health endpoint", async () => {
     const app = await createFactoryApp(true);
 
-    const explorerRes = await request(app).get("/explorer/");
-    const healthRes = await request(app).get("/health");
+    const explorerRes = await request(await serverFor(app)).get("/explorer/");
+    const healthRes = await request(await serverFor(app)).get("/health");
 
     expect(explorerRes.status).toBe(200);
     expect(healthRes.status).toBe(200);

@@ -5,7 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-08-17
+
+Minor release. Task-addressed methods are now scoped to the authenticated
+principal, and failed tasks no longer collapse every error to a fixed string —
+both from `aiperceivable/apexe` issues #33 and #34. Also accepts the A2A 0.3
+wire the Explorer and client actually speak, and raises the apcore-js floor to
+0.27.0. No breaking API change: the storage layer re-exports `@a2a-js/sdk`'s own
+owner-scoped `TaskStore`. 328 tests pass.
 
 ### Fixed
 
@@ -101,13 +108,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are affected the same way. 1.0.0-alpha.0 emitted the correct codes.
 
   Consequences: the messages and the masking behaviour are unaffected, so the
-  task scoping above still cannot be probed; but `A2AClient` no longer raises
-  `TaskNotFoundError` / `TaskNotCancelableError` for those responses, because
-  its `JSONRPC_ERRORS` table keys on the spec codes. This adapter's own
-  `ErrorMapper` codes (`-32601` / `-32602` / `-32001` for apcore errors) are
-  produced inside this package and are unaffected. `TASK_NOT_FOUND_CODE` in
+  task scoping above still cannot be probed. This adapter's own `ErrorMapper`
+  codes (`-32601` / `-32602` / `-32001` for apcore errors) are produced inside
+  this package and are unaffected. `TASK_NOT_FOUND_CODE` in
   `tests/security/task-scoping.test.ts` pins the current value so a fixed SDK
   shows up as a failing test rather than passing silently.
+
+  **`A2AClient` recovers the type it lost.** Its `JSONRPC_ERRORS` table keys on
+  the spec codes, so a miscoded `-32603` stopped raising `TaskNotFoundError` /
+  `TaskNotCancelableError` — a caller's `catch (e) { if (e instanceof
+  TaskNotFoundError) … }` silently went dead. It now falls back to matching the
+  message, which the bug leaves intact, but only when the code is `-32603`, and
+  only against anchored patterns: `"Unexpected failure: Task not found in
+  cache"` stays a generic `A2AServerError`. Once upstream is fixed the code
+  lookups take over and the fallback becomes unreachable.
+
+  This is deliberately **not** mirrored on the server side. Rewriting the wire
+  code would mean intercepting responses and prefix-matching six message shapes
+  while distinguishing them from this package's own correctly-coded errors —
+  fragile, and it would hide the upstream bug rather than work around it. A
+  third-party client still receives `-32603`; only this one recovers.
+
+- **`docs/sdk-differences.md` rewritten against the shipped SDKs.** The file
+  still described the 0.3-era pair: `/.well-known/agent.json` as *the* card path,
+  a `TaskStore` whose `context` was optional, `TaskState.completed` /
+  `"input-required"` string states, and `Part(root=TextPart(...))` /
+  `{ kind: "text" }` tagged unions — none of which exist in 1.0. Every entry is
+  now read off the shipped type definitions, including the two signatures easiest
+  to get wrong when porting (`DefaultRequestHandler` takes the same three objects
+  in a different order per language; TypeScript's `TaskStore` has no `delete`).
+
+- **Task listing is `ListTasks`, not `tasks/list`.** The bundled client sent
+  `tasks/list`, a name belonging to no A2A version — 1.0 calls it `ListTasks`
+  and 0.3 had no listing method — so `list_tasks()` had always returned
+  `-32601` against this server and against the Python one, and worked only
+  against this project's Rust server, which implemented the invented name. The
+  client now sends `ListTasks` with the `A2A-Version: 1.0` header both upstream
+  SDKs require for 1.0 method names (a request without it is read as v0.3, spec
+  3.6.2). No server-side change: this server was always correct.
+
+  The parameter names were wrong too, which only an end-to-end call could
+  surface: `ListTasksRequest` declares `pageSize` / `pageToken` / `contextId` /
+  `status` / `historyLength`, and has no `limit` field at all — so even with the
+  method name fixed, both SDK-backed servers answered `-32602 Invalid params`.
+  The Rust server had never caught it because it ignores list parameters
+  entirely. `list_tasks(limit=…)` keeps `limit` as the friendly parameter name
+  and sends `pageSize` on the wire.
+
+  The client test that covered this checked only the `limit` parameter, never
+  the method name or the header; it now asserts both.
+
+- **Two intermittent test failures traced to the test harness, not the server.**
+  `tests/explorer/handler.test.ts` had a known `expected 404 to be 200` flake,
+  and `tests/security/task-scoping.test.ts` had an unreported one that looked
+  far worse: the cross-principal assertion in *scopes set to the owner* failed
+  roughly 4% of runs, reading as if an attacker had been allowed to redirect
+  another principal's webhook.
+
+  Both were the same thing, and neither reached the server. `request(app)`
+  starts and tears down a throwaway HTTP server per call; at these rates about
+  1 request in 120 missed the app's middleware chain and came back
+  `404 Cannot POST /`, which parses to an empty body — so `error?.code` read as
+  `undefined` and the "attacker was refused" assertion failed. Instrumenting the
+  auth middleware showed 119 probe hits for 120 requests: the failing request
+  never entered the chain. Rebuilding the app 120 times gave ~1 failure;
+  reusing one app across 600 requests gave none, with an identical route table
+  every time.
+
+  Both suites now open one server per app and reuse it, awaiting `listening`
+  before the first request — `listen()` binds asynchronously, and handing
+  supertest a socket that is not up yet reintroduces the same race. After the
+  fix: task-scoping 70/70 runs green (was ~4% failing), explorer 70/70, and the
+  full suite 12/12 (was failing roughly 1 run in 5).
+
+- **`pnpm lint` works.** The script had always been `eslint src/ tests/`, but the
+  repo carried no `eslint.config.*` and no eslint packages, so it failed on
+  every invocation since ESLint 9 made flat config mandatory. Added
+  `eslint.config.mjs` mirroring `apcore-cli-typescript`'s, and the three missing
+  devDependencies. Result: 0 errors, 76 warnings (`no-explicit-any` and
+  `no-non-null-assertion`, both `warn` as elsewhere in the ecosystem, nearly all
+  in test files). The one warning in `src/` is gone — `lines.pop()!` is now
+  `lines.pop() ?? ""`.
+
+- **`streamMessage` stops on a terminal task state instead of a `final` flag,
+  and yields the event rather than the JSON-RPC envelope.** `final` is an A2A 0.3
+  construct that 1.0 removed, so the old check could never fire against a 1.0
+  server — the stream only ended when the connection closed. It also yielded
+  each frame whole (`{jsonrpc, id, result}`) while the docstring promised the
+  event, so callers had to reach into `result` themselves. Both now match the
+  Rust client, which already did this: the envelope is unwrapped, and a
+  `TASK_STATE_COMPLETED` / `FAILED` / `CANCELED` / `REJECTED` status ends the
+  stream after being yielded. Keepalive comment lines are skipped explicitly.
+
+  The tests that covered this had pinned the 0.3 shapes (`{"kind":"status",
+  "final":true}`) and passed regardless, so they were rewritten against 1.0
+  frames — including one that asserts a stray `final` does *not* end a stream.
+
+- **A JSON-RPC error frame on an SSE stream now raises instead of being yielded
+  as an event.** Upstream reports a mid-stream failure as its own frame, tagged
+  `event: error` with a JSON-RPC error response in `data:`. Envelope unwrapping
+  only looks for `result`, so such a frame fell through and was handed to the
+  caller as though it were an event — a caller reading `statusUpdate` saw
+  nothing and the failure vanished, while the non-streaming path raised for a
+  byte-identical payload. Both paths now share the same error mapping, so a
+  `-32001` frame produces `TaskNotFoundError` wherever it arrives. Events
+  received before the error frame are still delivered.
+
+  The `try` around frame handling was also narrowed to cover parsing alone: it
+  had been wide enough to swallow the new error, which would have restored the
+  exact behaviour being fixed.
 
 ### Security
 

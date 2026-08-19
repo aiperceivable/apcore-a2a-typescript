@@ -286,7 +286,7 @@ export class A2AServerFactory {
     // userBuilder: bind the authenticated principal to the ServerCallContext so
     // a2a-js's owner-scoped stores scope every task-addressed method to its
     // owner. With UserBuilder.noAuthentication every caller shared the
-    // UnauthenticatedUser bucket and tasks/list returned every caller's tasks.
+    // UnauthenticatedUser bucket and ListTasks returned every caller's tasks.
     app.post(
       "/",
       jsonRpcHandler({

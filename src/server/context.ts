@@ -36,7 +36,7 @@ export class IdentityUser implements User {
  *
  * That machinery was inert here because the handlers were mounted with
  * `UserBuilder.noAuthentication`: every request built a context with
- * `UnauthenticatedUser`, so every caller shared one owner bucket. `tasks/list`
+ * `UnauthenticatedUser`, so every caller shared one owner bucket. `ListTasks`
  * returned every caller's tasks including their full stdout, any principal
  * could read or cancel another's task by id, and any principal could point
  * another's terminal `statusUpdate` at a webhook of its choosing or delete the
