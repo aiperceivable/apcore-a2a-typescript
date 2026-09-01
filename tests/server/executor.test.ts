@@ -238,19 +238,34 @@ describe("ApCoreAgentExecutor", () => {
 describe("failed-task error classification", () => {
   const partConverter = new PartConverter();
 
-  /** Run one failing execution and return the FAILED status message text. */
-  async function failedText(error: unknown): Promise<string | undefined> {
+  /** Run one failing execution and return the terminal status message text. */
+  async function terminalText(
+    error: unknown,
+    state: TaskState,
+    opts: { discloseRefusalReason?: boolean } = {},
+  ): Promise<string | undefined> {
     const executor = { callAsync: vi.fn().mockRejectedValue(error) };
-    const agent = new ApCoreAgentExecutor({ executor, partConverter });
+    const agent = new ApCoreAgentExecutor({ executor, partConverter, ...opts });
     const bus = makeEventBus();
     await agent.execute(makeContext({ skillId: "test" }) as never, bus);
-    const failed = (bus.events as AgentExecutionEvent[]).filter(
-      (e) =>
-        (e as { data?: { status?: { state?: TaskState } } }).data?.status?.state ===
-        TaskState.TASK_STATE_FAILED,
+    const matching = (bus.events as AgentExecutionEvent[]).filter(
+      (e) => (e as { data?: { status?: { state?: TaskState } } }).data?.status?.state === state,
     );
-    expect(failed.length, "expected a FAILED status event").toBeGreaterThan(0);
-    return statusText((failed[0] as AgentExecutionEvent).data as never);
+    expect(matching.length, `expected a ${state} status event`).toBeGreaterThan(0);
+    return statusText((matching[0] as AgentExecutionEvent).data as never);
+  }
+
+  /** Run one failing execution and return the FAILED status message text. */
+  async function failedText(error: unknown): Promise<string | undefined> {
+    return terminalText(error, TaskState.TASK_STATE_FAILED);
+  }
+
+  /** Run one refused execution and return the REJECTED status message text. */
+  async function rejectedText(
+    error: unknown,
+    opts: { discloseRefusalReason?: boolean } = {},
+  ): Promise<string | undefined> {
+    return terminalText(error, TaskState.TASK_STATE_REJECTED, opts);
   }
 
   it("lets an invalid-input error reach the caller", async () => {
@@ -273,15 +288,54 @@ describe("failed-task error classification", () => {
     expect(text).toContain("width");
   });
 
-  it("keeps an ACL denial masked as Task not found", async () => {
-    // srs FR-ERR-003: an ACL denial must not disclose the caller, the target
-    // module, or that the denial happened at all.
-    const text = await failedText(
+  it("rejects an ACL denial and says Access denied", async () => {
+    // srs FR-ERR-003 / FR-ERR-012: the class of refusal reaches the caller, the
+    // detail does not. This is the surface that matters on message/send, where
+    // the response is a JSON-RPC `result` and the error code never reaches the
+    // caller at all — the state and this message are the whole payload.
+    const text = await rejectedText(
       new ModuleError(ErrorCodes.ACL_DENIED, "caller alice denied module admin.wipe"),
     );
-    expect(text).toBe("Task not found");
+    expect(text).toBe("Access denied");
+    // "Task not found" sent an agent back to retry the one thing that was fine.
+    expect(text).not.toBe("Task not found");
     expect(text).not.toContain("alice");
     expect(text).not.toContain("admin.wipe");
+  });
+
+  it.each([
+    [ErrorCodes.APPROVAL_DENIED, "Approval denied"],
+    [ErrorCodes.APPROVAL_TIMEOUT, "Approval timed out"],
+  ])("rejects %s rather than failing it", async (code, expected) => {
+    // srs FR-ERR-009 / FR-ERR-010. These used to reach the caller as -32603
+    // "Internal server error" — the canonical *retryable* failure, for a call a
+    // human had explicitly refused.
+    const text = await rejectedText(new ModuleError(code, "approval 7f3c1e for alice@example.com"));
+    expect(text).toBe(expected);
+    expect(text).not.toBe("Internal server error");
+    expect(text).not.toContain("alice@example.com");
+    expect(text).not.toContain("7f3c1e");
+  });
+
+  it("keeps APPROVAL_PENDING a resumable pause", async () => {
+    // The one approval code that must NOT move (srs FR-EXE-002): it carries the
+    // approvalId the caller resumes with, and `rejected` is terminal.
+    const text = await terminalText(
+      new ModuleError(ErrorCodes.APPROVAL_PENDING, "Approval required: approvalId=7f3c1e"),
+      TaskState.TASK_STATE_INPUT_REQUIRED,
+    );
+    expect(text).toContain("approvalId=7f3c1e");
+  });
+
+  it("carries the reason onto the task status when disclosure is enabled", async () => {
+    // srs FR-ERR-011: the flag must move both surfaces together, or the
+    // JSON-RPC error and the task status would disagree about the same refusal.
+    const text = await rejectedText(
+      new ModuleError(ErrorCodes.ACL_DENIED, "caller alice denied module admin.wipe"),
+      { discloseRefusalReason: true },
+    );
+    expect(text).toContain("alice");
+    expect(text).toContain("admin.wipe");
   });
 
   it("keeps the fixed message for an internal error", async () => {
@@ -347,7 +401,8 @@ describe("failed-task error classification", () => {
   it("withholds aiGuidance when a module declares a masked error userFixable", async () => {
     // userFixable is author-settable, so gating on it let any module widen a
     // fixed per-class string. An ACL denial must stay exactly "Task not found"
-    // (srs FR-ERR-003) whatever the module claims.
+    // (srs FR-ERR-003) whatever the module claims. The guidance here names the
+    // very module the refusal must not disclose.
     const err = new ModuleError(
       ErrorCodes.ACL_DENIED,
       "caller alice denied admin.wipe",
@@ -359,7 +414,7 @@ describe("failed-task error classification", () => {
       true,
     );
     expect(err.userFixable).toBe(true);
-    expect(await failedText(err)).toBe("Task not found");
+    expect(await rejectedText(err)).toBe("Access denied");
   });
 
   it("does not leak paths or tracebacks", async () => {

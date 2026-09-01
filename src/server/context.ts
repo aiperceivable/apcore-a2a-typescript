@@ -12,7 +12,7 @@ import { getAuthIdentity } from "../auth/storage.js";
  * `Context`, so governance and task scoping name the same caller.
  */
 export class IdentityUser implements User {
-  constructor(private readonly identity: Identity) {}
+  constructor(readonly identity: Identity) {}
 
   get isAuthenticated(): boolean {
     return true;
@@ -67,4 +67,19 @@ export function identityUserBuilder(_req: Request): Promise<User> {
  */
 export function anonymousContext(): ServerCallContext {
   return new ServerCallContext({ user: new UnauthenticatedUser() });
+}
+
+/**
+ * The apcore `Identity` behind a `ServerCallContext`, if authenticated.
+ *
+ * The extended Agent Card filters skills against the caller's own identity
+ * (srs FR-AGC-004), and an ACL rule's `conditions` block reads `identityType`
+ * and `roles` — none of which survive the reduction to `userName`.
+ *
+ * Returns `null` for `UnauthenticatedUser`, which is the value the card filter
+ * treats as the anonymous principal.
+ */
+export function identityOf(context: ServerCallContext): Identity | null {
+  const user = context.user as { identity?: Identity } | undefined;
+  return user?.identity ?? null;
 }

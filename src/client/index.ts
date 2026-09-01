@@ -5,6 +5,10 @@ export {
   A2AConnectionError,
   A2ADiscoveryError,
   A2AServerError,
+  AccessDeniedError,
+  ApprovalDeniedError,
+  ApprovalTimeoutError,
+  GovernanceRefusedError,
   TaskNotCancelableError,
   TaskNotFoundError,
 } from "./exceptions.js";

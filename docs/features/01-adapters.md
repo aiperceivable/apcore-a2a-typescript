@@ -76,7 +76,9 @@ Port of `apcore_a2a/adapters/errors.py`
   - Check for `.code` property (apcore error codes)
   - MODULE_NOT_FOUND → -32601
   - SCHEMA_VALIDATION_ERROR → -32602
-  - ACL_DENIED → -32001 (masked as "Task not found")
+  - ACL_DENIED → -32040 "Access denied" (srs FR-ERR-003)
+  - APPROVAL_DENIED → -32041 "Approval denied" (srs FR-ERR-009)
+  - APPROVAL_TIMEOUT → -32042 "Approval timed out" (srs FR-ERR-010)
   - MODULE_TIMEOUT → -32603
   - Safety limits → -32603
   - INVALID_INPUT → -32602
@@ -89,8 +91,22 @@ Port of `apcore_a2a/adapters/errors.py`
 const CODE_METHOD_NOT_FOUND = -32601;
 const CODE_INVALID_PARAMS = -32602;
 const CODE_INTERNAL_ERROR = -32603;
+// Unknown task id, or a task owned by another principal — deliberately
+// indistinguishable from each other, and no longer used for authorization.
 const CODE_TASK_NOT_FOUND = -32001;
+// Governance refusals. A2A 1.0 reserves -32001..-32009; JSON-RPC 2.0 leaves
+// -32000..-32099 to the implementation, so these sit above A2A's block with
+// room for it to grow.
+const CODE_ACCESS_DENIED = -32040;
+const CODE_APPROVAL_DENIED = -32041;
+const CODE_APPROVAL_TIMEOUT = -32042;
 ```
+
+`ErrorMapper` takes an optional `discloseRefusalReason` (default `false`,
+srs FR-ERR-011). When set, the three governance codes forward apcore's own
+sanitized message instead of the fixed per-class string. The code never changes
+with the flag: what a refusal *is* does not depend on how much a deployment
+chooses to say about it.
 
 ## TDD Tasks
 
@@ -137,7 +153,7 @@ const CODE_TASK_NOT_FOUND = -32001;
 ### T-01.5: ErrorMapper
 1. RED: test MODULE_NOT_FOUND → -32601
 2. GREEN: implement toJsonRpcError
-3. RED: test ACL_DENIED → masked -32001
-4. GREEN: add ACL masking
+3. RED: test ACL_DENIED → -32040 "Access denied", never -32001
+4. GREEN: add the governance refusal arm
 5. RED: test sanitizeMessage strips paths
 6. GREEN: implement sanitizeMessage

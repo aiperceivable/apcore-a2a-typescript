@@ -3,6 +3,10 @@ import { A2AClient } from "../../src/client/client.js";
 import {
   A2AConnectionError,
   A2AServerError,
+  AccessDeniedError,
+  ApprovalDeniedError,
+  ApprovalTimeoutError,
+  GovernanceRefusedError,
   TaskNotFoundError,
   TaskNotCancelableError,
 } from "../../src/client/exceptions.js";
@@ -154,6 +158,59 @@ describe("A2AClient", () => {
 
       const client = new A2AClient("http://localhost:3000");
       await expect(client.getTask("t-1")).rejects.toThrow(TaskNotFoundError);
+    });
+
+    it.each([
+      [-32040, AccessDeniedError],
+      [-32041, ApprovalDeniedError],
+      [-32042, ApprovalTimeoutError],
+    ])("throws a typed governance error for JSON-RPC %i", async (code, Expected) => {
+      // srs FR-ERR-003 / FR-ERR-009 / FR-ERR-010. A refusal is not a transient
+      // failure. Left as A2AServerError it reads as "the server broke, retry it"
+      // — the reading the server side of this change exists to stop.
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ error: { code, message: "some reason" } }),
+      });
+
+      const client = new A2AClient("http://localhost:3000");
+      const err = await client.getTask("t-1").catch((e) => e);
+      expect(err).toBeInstanceOf(Expected);
+      expect(err).toBeInstanceOf(GovernanceRefusedError);
+      expect(err.code).toBe(code);
+    });
+
+    it("does not report an access denial as TaskNotFoundError", async () => {
+      // The whole point of moving off -32001: these must not collapse into one
+      // client-side class, because their correct responses are opposite.
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ error: { code: -32040, message: "Access denied" } }),
+      });
+
+      const client = new A2AClient("http://localhost:3000");
+      const err = await client.getTask("t-1").catch((e) => e);
+      expect(err).toBeInstanceOf(AccessDeniedError);
+      expect(err).not.toBeInstanceOf(TaskNotFoundError);
+    });
+
+    it("keeps a disclosed reason on the exception", async () => {
+      // With discloseRefusalReason on, the server's message is the whole value
+      // of the opt-in — it must not be replaced by the class default.
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            error: {
+              code: -32040,
+              message: "Access denied: caller 'svc' cannot access 'admin.wipe'",
+            },
+          }),
+      });
+
+      const client = new A2AClient("http://localhost:3000");
+      const err = await client.getTask("t-1").catch((e) => e);
+      expect(err.message).toContain("admin.wipe");
     });
 
     it("throws TaskNotCancelableError for JSON-RPC -32002", async () => {

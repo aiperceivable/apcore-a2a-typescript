@@ -15,6 +15,69 @@ export interface ModuleDescriptor {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * The four behavioral annotations promoted onto the A2A wire, with the tag each
+ * becomes. Order is fixed so the card is byte-identical across the three
+ * bindings (srs FR-SKL-004 criterion 8).
+ */
+const ANNOTATION_TAGS: ReadonlyArray<readonly [string, string]> = [
+  ["readonly", "apcore:readonly"],
+  ["destructive", "apcore:destructive"],
+  ["idempotent", "apcore:idempotent"],
+  ["requires_approval", "apcore:requires-approval"],
+];
+
+/** camelCase aliases, since a descriptor may arrive from either convention. */
+const ANNOTATION_ALIASES: Readonly<Record<string, string>> = {
+  requires_approval: "requiresApproval",
+};
+
+function annotationFlag(annotations: Record<string, unknown>, field: string): boolean {
+  const alias = ANNOTATION_ALIASES[field];
+  return Boolean(annotations[field] ?? (alias !== undefined ? annotations[alias] : undefined));
+}
+
+/**
+ * Append apcore's behavioral annotations to a skill's tags (srs FR-SKL-004).
+ *
+ * A2A 1.0 `AgentSkill` is `{id, name, description, tags, examples, inputModes,
+ * outputModes, securityRequirements}` — no `extensions`, no `metadata` — so
+ * `tags` is the only carrier that exists. The `apcore:` prefix keeps these out
+ * of the module's own flat tag namespace, where a user tag named `destructive`
+ * would otherwise be indistinguishable from the annotation.
+ *
+ * Without this the Agent Card carried enough for a caller to *construct* a call
+ * and not enough to judge whether making it is safe. It is also what makes retry
+ * semantics usable: `retryable` is a property of the error, but whether a retry
+ * is safe is a property of the operation, and a timeout is retryable for a read
+ * and dangerous for a non-idempotent mutation.
+ *
+ * Only truthy flags are emitted, matching how the apcore MCP binding maps the
+ * same annotations onto optional `readOnlyHint` / `destructiveHint` /
+ * `idempotentHint`. Absence means "not asserted", never "asserted false".
+ */
+export function appendAnnotationTags(tags: string[], descriptor: ModuleDescriptor): void {
+  const annotations = descriptor.annotations;
+  if (!annotations) return;
+  for (const [field, tag] of ANNOTATION_TAGS) {
+    if (annotationFlag(annotations, field) && !tags.includes(tag)) {
+      tags.push(tag);
+    }
+  }
+}
+
+/**
+ * Whether a module is gated behind human approval.
+ *
+ * Used by the Agent Card builder to withhold the skill from the public card
+ * (srs FR-AGC-003) and restore it on the extended one (srs FR-AGC-004).
+ */
+export function requiresApproval(descriptor: ModuleDescriptor | null | undefined): boolean {
+  const annotations = descriptor?.annotations;
+  if (!annotations) return false;
+  return annotationFlag(annotations, "requires_approval");
+}
+
 export class SkillMapper {
   // Share root-type detection with SchemaConverter so the "string root" rule
   // lives in exactly one place.
@@ -50,6 +113,7 @@ export class SkillMapper {
       (display.tags as string[])?.length
         ? [...(display.tags as string[])]
         : [...(descriptor.tags ?? [])];
+    appendAnnotationTags(resolvedTags, descriptor);
 
     return {
       id,

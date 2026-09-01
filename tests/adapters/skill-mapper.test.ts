@@ -300,4 +300,65 @@ describe("SkillMapper", () => {
       expect(mapper.buildExamples(descriptor)).toEqual([]);
     });
   });
+  describe("behavioral annotations (srs FR-SKL-004)", () => {
+    it("reaches the wire as namespaced tags after the module's own", () => {
+      // A2A 1.0 AgentSkill has no extensions and no metadata member — and in the
+      // Python binding the type is generated from the A2A protobuf schema — so
+      // tags is the only carrier that exists.
+      const skill = mapper.toSkill({
+        module_id: "fs.read",
+        description: "Reads a file",
+        tags: ["filesystem"],
+        annotations: { readonly: true, idempotent: true },
+      });
+      expect(skill?.tags).toEqual(["filesystem", "apcore:readonly", "apcore:idempotent"]);
+    });
+
+    it("emits them in a fixed order", () => {
+      // Fixed order so the card is byte-identical across the three bindings.
+      const skill = mapper.toSkill({
+        module_id: "admin.users.delete",
+        description: "Deletes a user",
+        tags: [],
+        annotations: { requires_approval: true, destructive: true, readonly: true },
+      });
+      expect(skill?.tags).toEqual([
+        "apcore:readonly",
+        "apcore:destructive",
+        "apcore:requires-approval",
+      ]);
+    });
+
+    it("accepts the camelCase spelling of requires_approval", () => {
+      const skill = mapper.toSkill({
+        module_id: "admin.users.delete",
+        description: "Deletes a user",
+        annotations: { requiresApproval: true },
+      });
+      expect(skill?.tags).toEqual(["apcore:requires-approval"]);
+    });
+
+    it("emits nothing for false, absent, or missing annotations", () => {
+      // Absence means "not asserted", never "asserted false" — matching how the
+      // apcore MCP binding maps the same annotations onto optional hints.
+      const explicitlyFalse = mapper.toSkill({
+        module_id: "math.add",
+        description: "Adds",
+        annotations: { readonly: false, destructive: false, idempotent: false },
+      });
+      const noAnnotations = mapper.toSkill({ module_id: "math.add", description: "Adds" });
+      expect(explicitlyFalse?.tags).toEqual([]);
+      expect(noAnnotations?.tags).toEqual([]);
+    });
+
+    it("does not duplicate a tag a module already declares", () => {
+      const skill = mapper.toSkill({
+        module_id: "fs.remove",
+        description: "Removes a file",
+        tags: ["apcore:destructive"],
+        annotations: { destructive: true },
+      });
+      expect(skill?.tags).toEqual(["apcore:destructive"]);
+    });
+  });
 });

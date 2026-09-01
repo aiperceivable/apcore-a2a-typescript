@@ -40,7 +40,7 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 ## Requirements
 
 - Node.js >= 18.0.0
-- `apcore-js` >= 0.22.0
+- `apcore-js` >= 0.28.0
 
 ---
 

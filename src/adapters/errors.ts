@@ -3,7 +3,48 @@ import { ErrorCodes } from "apcore-js";
 const CODE_METHOD_NOT_FOUND = -32601;
 const CODE_INVALID_PARAMS = -32602;
 const CODE_INTERNAL_ERROR = -32603;
-const CODE_TASK_NOT_FOUND = -32001;
+/**
+ * A2A 1.0 `TaskNotFoundError`. Reserved for an unknown task id or one owned by
+ * another principal — deliberately indistinguishable from each other, and no
+ * longer produced for an authorization refusal (see {@link CODE_ACCESS_DENIED}).
+ */
+export const CODE_TASK_NOT_FOUND = -32001;
+
+// Governance refusal codes (srs FR-ERR-003 / FR-ERR-009 / FR-ERR-010).
+//
+// A2A 1.0 reserves -32001..-32009; JSON-RPC 2.0 leaves -32000..-32099 to the
+// implementation. These three sit above A2A's reserved block, with room for it
+// to grow, and are the "JSON-RPC custom error" A2A §13.2 names as the example
+// for this binding.
+//
+// apcore distinguishes these three refusals from each other and from every
+// other failure. Collapsing them onto -32001 (which means "unknown or non-owned
+// task id") or -32603 (which every agent reads as "retry me") told the caller a
+// *different* failure had happened, one whose correct response is the opposite
+// of the real one.
+export const CODE_ACCESS_DENIED = -32040;
+export const CODE_APPROVAL_DENIED = -32041;
+export const CODE_APPROVAL_TIMEOUT = -32042;
+
+/**
+ * The three governance refusal codes, each with its JSON-RPC code and the fixed
+ * message it reports by default.
+ *
+ * `APPROVAL_PENDING` is deliberately absent: it is a resumable pause carrying
+ * the `approvalId` the caller resumes with, handled by the executor before it
+ * ever reaches the mapper (srs FR-EXE-002). Sweeping it in here would turn that
+ * pause into a terminal failure.
+ */
+const GOVERNANCE_REFUSALS: ReadonlyMap<string, { code: number; message: string }> = new Map([
+  [ErrorCodes.ACL_DENIED, { code: CODE_ACCESS_DENIED, message: "Access denied" }],
+  [ErrorCodes.APPROVAL_DENIED, { code: CODE_APPROVAL_DENIED, message: "Approval denied" }],
+  [ErrorCodes.APPROVAL_TIMEOUT, { code: CODE_APPROVAL_TIMEOUT, message: "Approval timed out" }],
+]);
+
+/** Whether an apcore error code is one of the three governance refusals. */
+export function isGovernanceRefusal(code: string | undefined): boolean {
+  return code !== undefined && GOVERNANCE_REFUSALS.has(code);
+}
 
 export interface JsonRpcError {
   code: number;
@@ -11,6 +52,15 @@ export interface JsonRpcError {
 }
 
 export class ErrorMapper {
+  /**
+   * @param discloseRefusalReason Forward apcore's own message for the three
+   *   governance refusal codes instead of the fixed per-class string
+   *   (srs FR-ERR-011). Off by default. The code never changes with the flag —
+   *   what a refusal *is* does not depend on how much a deployment chooses to
+   *   say about it.
+   */
+  constructor(readonly discloseRefusalReason: boolean = false) {}
+
   /** ErrorFormatter interface for apcore ErrorFormatterRegistry. */
   format(error: unknown, _context?: unknown): Record<string, unknown> {
     const rpcError = this.toJsonRpcError(error);
@@ -38,6 +88,21 @@ export class ErrorMapper {
     return { code: CODE_INTERNAL_ERROR, message: "Internal server error" };
   }
 
+  /**
+   * Caller-facing message for a governance refusal.
+   *
+   * Default: the fixed per-class string. With `discloseRefusalReason`
+   * (srs FR-ERR-011): apcore's own message, through the same sanitizer every
+   * other forwarded message goes through. An empty or whitespace-only apcore
+   * message falls back to the fixed string rather than sending the caller
+   * nothing.
+   */
+  private refusalMessage(fixed: string, error: Error): string {
+    if (!this.discloseRefusalReason) return fixed;
+    const disclosed = this.sanitizeMessage(String(error.message ?? ""));
+    return disclosed.trim() ? disclosed : fixed;
+  }
+
   private handleApcoreError(error: Error, errorCode: string): JsonRpcError {
     if (errorCode === ErrorCodes.MODULE_NOT_FOUND) {
       const message = this.sanitizeMessage((error as { message: string }).message);
@@ -59,8 +124,15 @@ export class ErrorMapper {
       return { code: CODE_INVALID_PARAMS, message: `Invalid input: ${description}` };
     }
 
-    if (errorCode === ErrorCodes.ACL_DENIED) {
-      return { code: CODE_TASK_NOT_FOUND, message: "Task not found" };
+    // The A2A spec §13.2 MUST NOT forbids revealing *the existence of a
+    // resource*, not the *class* of failure. A fixed "Access denied" /
+    // "Approval denied" / "Approval timed out" names no caller, target,
+    // approver or rule, so it discloses nothing — a caller that named a skill
+    // already held that id — while still telling an agent to stop rather than
+    // retry.
+    const refusal = GOVERNANCE_REFUSALS.get(errorCode);
+    if (refusal !== undefined) {
+      return { code: refusal.code, message: this.refusalMessage(refusal.message, error) };
     }
 
     if (errorCode === ErrorCodes.MODULE_TIMEOUT) {
@@ -150,19 +222,30 @@ export function isServerSideSchemaError(message: string): boolean {
  * {@link sanitizeMessage} does not strip (module ids, versions, env-var names,
  * hostnames). `userFixable` is also settable per-error by the module author,
  * which would let any module widen any fixed per-class string at will,
- * including the `ACL_DENIED` mask.
+ * including the governance refusals.
+ *
+ * The three governance codes (`ACL_DENIED`, `APPROVAL_DENIED`,
+ * `APPROVAL_TIMEOUT`) are in this partition only when `discloseRefusalReason` is
+ * set — the same flag the mapper branches on, so the two surfaces agree under
+ * either setting.
  *
  * `errorMapper message policy matches toJsonRpcError` locks this to the
- * branching in `ErrorMapper.handleApcoreError` across every apcore error code,
- * so the two cannot drift.
+ * branching in `ErrorMapper.handleApcoreError` across every apcore error code
+ * and both flag values, so the two cannot drift.
  */
-export function carriesCallerDetail(error: unknown): boolean {
+export function carriesCallerDetail(error: unknown, discloseRefusalReason = false): boolean {
   const code = (error as { code?: string } | null)?.code;
   if (code === ErrorCodes.MODULE_NOT_FOUND || code === ErrorCodes.GENERAL_INVALID_INPUT) {
     return true;
   }
   if (code === ErrorCodes.SCHEMA_VALIDATION_ERROR) {
     return !isServerSideSchemaError(String((error as { message?: string }).message ?? ""));
+  }
+  // The three governance codes move into and out of this partition with the
+  // flag, so the task-status surface forwards exactly what the JSON-RPC surface
+  // does under either setting (srs FR-ERR-011 criterion 4).
+  if (isGovernanceRefusal(code)) {
+    return discloseRefusalReason;
   }
   return false;
 }

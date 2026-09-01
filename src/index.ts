@@ -1,10 +1,22 @@
-export const VERSION = "0.4.1";
+export const VERSION = "0.6.0";
 
 // Public API: serve
 export { serve, asyncServe } from "./serve.js";
 
 // Client
 export { A2AClient } from "./client/index.js";
+export {
+  A2AClientError,
+  A2AConnectionError,
+  A2ADiscoveryError,
+  A2AServerError,
+  AccessDeniedError,
+  ApprovalDeniedError,
+  ApprovalTimeoutError,
+  GovernanceRefusedError,
+  TaskNotCancelableError,
+  TaskNotFoundError,
+} from "./client/index.js";
 
 // Auth
 export type { Authenticator, ClaimMapping } from "./auth/index.js";

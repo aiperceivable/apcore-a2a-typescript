@@ -10,6 +10,9 @@ const codeByName: Record<string, string> = {
   ModuleNotFoundError: ErrorCodes.MODULE_NOT_FOUND,
   SchemaValidationError: ErrorCodes.SCHEMA_VALIDATION_ERROR,
   ACLDeniedError: ErrorCodes.ACL_DENIED,
+  ApprovalDeniedError: ErrorCodes.APPROVAL_DENIED,
+  ApprovalTimeoutError: ErrorCodes.APPROVAL_TIMEOUT,
+  ApprovalPendingError: ErrorCodes.APPROVAL_PENDING,
   ModuleExecuteError: ErrorCodes.MODULE_EXECUTE_ERROR,
 };
 
@@ -30,7 +33,11 @@ function buildError(spec: any): unknown {
 
 (fixture ? describe : describe.skip)("A-ERR: error mapping", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const c of fixture?.error_cases ?? []) {
+  // Cases about the server's tasks/* path are not reconstructible as an apcore
+  // exception; the task-scoping tests assert those.
+  for (const c of (fixture?.error_cases ?? []).filter(
+    (e: { surface?: string }) => e.surface !== "server",
+  )) {
     it(c.id, () => {
       const rpc = new ErrorMapper().toJsonRpcError(buildError(c.input));
       expect(rpc.code).toBe(c.expected_error_code);

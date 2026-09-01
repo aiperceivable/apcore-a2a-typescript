@@ -45,6 +45,18 @@ export interface AsyncServeOptions {
   executionTimeout?: number;
   metrics?: boolean;
   sysModules?: boolean;
+  /**
+   * Forward apcore's own reason for a governance refusal (ACL denial, approval
+   * denial, approval timeout) instead of the fixed per-class string
+   * (srs FR-ERR-011). Off by default.
+   *
+   * The *class* of refusal is conveyed either way — each has its own JSON-RPC
+   * code and a `rejected` task state; this decides only whether the *detail*
+   * travels with it. A server whose callers are its own agents wants it on: that
+   * is what the apcore MCP binding reports today. A server facing untrusted
+   * callers keeps the default.
+   */
+  discloseRefusalReason?: boolean;
 }
 
 export interface ServeOptions extends AsyncServeOptions {
@@ -181,6 +193,7 @@ export async function asyncServe(
     executionTimeout: resolveExecutionTimeout(opts.executionTimeout),
     metrics: opts.metrics,
     sysModules: opts.sysModules,
+    discloseRefusalReason: opts.discloseRefusalReason,
   });
 
   return app;

@@ -3,6 +3,10 @@ import { AgentCardFetcher } from "./card-fetcher.js";
 import {
   A2AConnectionError,
   A2AServerError,
+  AccessDeniedError,
+  ApprovalDeniedError,
+  ApprovalTimeoutError,
+  type GovernanceRefusedError,
   TaskNotCancelableError,
   TaskNotFoundError,
 } from "./exceptions.js";
@@ -64,6 +68,19 @@ const JSONRPC_ERRORS: Record<number, new () => Error> = {
 };
 
 /**
+ * Governance refusal codes (srs FR-ERR-003 / FR-ERR-009 / FR-ERR-010).
+ *
+ * Kept separate from {@link JSONRPC_ERRORS} because these classes take the
+ * server's message: with `discloseRefusalReason` enabled it carries the actual
+ * reason, which is the whole value of the opt-in.
+ */
+const GOVERNANCE_ERRORS: Record<number, new (message?: string) => GovernanceRefusedError> = {
+  [-32040]: AccessDeniedError,
+  [-32041]: ApprovalDeniedError,
+  [-32042]: ApprovalTimeoutError,
+};
+
+/**
  * Message patterns that recover a typed error from a miscoded `-32603`.
  *
  * `@a2a-js/sdk` 1.0.1 bundles `toJsonRpcError` and the `A2AError` class
@@ -88,6 +105,8 @@ const SDK_BUNDLING_FALLBACK: ReadonlyArray<readonly [RegExp, new () => Error]> =
 function raiseJsonRpcError(error: { code?: number; message?: string }): never {
   const code = error.code ?? -32603;
   const message = error.message ?? "Server error";
+  const Governance = GOVERNANCE_ERRORS[code];
+  if (Governance !== undefined) throw new Governance(message);
   const ErrorClass = JSONRPC_ERRORS[code];
   if (ErrorClass === TaskNotFoundError) throw new TaskNotFoundError();
   if (ErrorClass === TaskNotCancelableError) throw new TaskNotCancelableError();

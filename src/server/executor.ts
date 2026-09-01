@@ -8,14 +8,19 @@ import {
   type ExecutionEventBus,
 } from "@a2a-js/sdk/server";
 import { getAuthIdentity } from "../auth/storage.js";
-import { ErrorMapper, carriesCallerDetail, sanitizeMessage } from "../adapters/errors.js";
+import {
+  ErrorMapper,
+  carriesCallerDetail,
+  isGovernanceRefusal,
+  sanitizeMessage,
+} from "../adapters/errors.js";
 import type { PartConverter } from "../adapters/parts.js";
 import type { Registry } from "../adapters/agent-card.js";
 
 /**
- * This package's single error-redaction policy. Stateless, so one instance is
- * shared rather than threading another constructor argument through
- * {@link ApCoreAgentExecutorOptions}.
+ * This package's default error-redaction policy, used when no deployment has
+ * opted into disclosing governance refusal reasons (srs FR-ERR-011). The
+ * executor swaps in its own instance when the flag is set.
  */
 const errorMapper = new ErrorMapper();
 
@@ -28,7 +33,9 @@ const errorMapper = new ErrorMapper();
  * - internal / unrecognized errors keep the fixed `"Internal server error"`
  *   (srs FR-ERR-004 / FR-ERR-008, locked by the shared `error_mapping.json` and
  *   `streaming_events.json` fixtures);
- * - `ACL_DENIED` stays masked as `"Task not found"` (srs FR-ERR-003);
+ * - governance refusals carry a fixed per-class string — `"Access denied"`,
+ *   `"Approval denied"`, `"Approval timed out"` (srs FR-ERR-003 / FR-ERR-009 /
+ *   FR-ERR-010) — naming no caller, target, approver or rule;
  * - caller-fixable classes (schema validation, invalid input, unknown module)
  *   carry their sanitized detail, which srs FR-ERR-002 requires precisely so a
  *   caller "can correct their input without guessing".
@@ -49,10 +56,14 @@ const errorMapper = new ErrorMapper();
  * hostnames). `userFixable` is settable per-error by the module author, so any
  * module could widen the fixed string further.
  */
-function failureText(error: unknown): string {
-  const message = errorMapper.toJsonRpcError(error).message;
+function failureText(error: unknown, mapper: ErrorMapper = errorMapper): string {
+  const message = mapper.toJsonRpcError(error).message;
   const guidance = (error as { aiGuidance?: unknown } | null)?.aiGuidance;
-  if (carriesCallerDetail(error) && typeof guidance === "string" && guidance.trim() !== "") {
+  if (
+    carriesCallerDetail(error, mapper.discloseRefusalReason) &&
+    typeof guidance === "string" &&
+    guidance.trim() !== ""
+  ) {
     return `${message} (${sanitizeMessage(guidance)})`;
   }
   return message;
@@ -92,6 +103,11 @@ export interface ApCoreAgentExecutorOptions {
   registry?: Registry;
   executionTimeout?: number;
   onStateChange?: (oldState: string, newState: string) => void;
+  /**
+   * Forward apcore's own reason for a governance refusal instead of the fixed
+   * per-class string (srs FR-ERR-011). Off by default.
+   */
+  discloseRefusalReason?: boolean;
 }
 
 export class ApCoreAgentExecutor implements AgentExecutor {
@@ -104,6 +120,7 @@ export class ApCoreAgentExecutor implements AgentExecutor {
   private onStateChange?: (oldState: string, newState: string) => void;
   // P0-B: CancelToken map keyed by taskId
   private cancelTokens = new Map<string, { cancel(): void }>();
+  private errorMapper: ErrorMapper;
 
   constructor(opts: ApCoreAgentExecutorOptions) {
     this.executor = opts.executor;
@@ -111,6 +128,9 @@ export class ApCoreAgentExecutor implements AgentExecutor {
     this.registry = opts.registry;
     this.executionTimeoutMs = (opts.executionTimeout ?? 300) * 1000;
     this.onStateChange = opts.onStateChange;
+    this.errorMapper = opts.discloseRefusalReason
+      ? new ErrorMapper(true)
+      : errorMapper;
   }
 
   private notify(oldState: string, newState: string): void {
@@ -272,13 +292,27 @@ export class ApCoreAgentExecutor implements AgentExecutor {
         return;
       }
       if (code === "APPROVAL_PENDING") {
+        // A resumable pause, not a refusal: the message carries the approvalId
+        // the caller resumes with (srs FR-EXE-002). Must not be swept in with
+        // the governance codes below — `rejected` is terminal, so re-coding it
+        // would end the conversation.
         this.notify("working", "input-required");
         this.publishInputRequired(context, eventBus, String(e));
         return;
       }
+      if (isGovernanceRefusal(code)) {
+        // A2A 1.0 defines `rejected` as terminal, and a policy refusal is what
+        // it describes (srs FR-ERR-012). `failed` said only "something broke",
+        // which for a refusal is both wrong and an invitation to retry. This is
+        // the surface that matters on message/send, where the response is a
+        // JSON-RPC `result` and the error code never reaches the caller at all.
+        this.notify("working", "rejected");
+        this.publishRejected(context, eventBus, failureText(e, this.errorMapper));
+        return;
+      }
       console.error(`Execution failed for task ${context.taskId} skill ${skillId}:`, e);
       this.notify("working", "failed");
-      this.publishFailed(context, eventBus, failureText(e));
+      this.publishFailed(context, eventBus, failureText(e, this.errorMapper));
       return;
     } finally {
       // Clean up the cancel token on every exit path (matches Python's
@@ -415,6 +449,23 @@ export class ApCoreAgentExecutor implements AgentExecutor {
         taskId: context.taskId,
         contextId,
         status: makeStatus(TaskState.TASK_STATE_FAILED, textMessage(message)),
+        metadata: undefined,
+      }),
+    );
+  }
+
+  /** Emit REJECTED status for a governance refusal (srs FR-ERR-012). */
+  private publishRejected(
+    context: RequestContext,
+    eventBus: ExecutionEventBus,
+    message: string,
+  ): void {
+    const contextId = context.contextId || context.taskId;
+    eventBus.publish(
+      AgentEvent.statusUpdate({
+        taskId: context.taskId,
+        contextId,
+        status: makeStatus(TaskState.TASK_STATE_REJECTED, textMessage(message)),
         metadata: undefined,
       }),
     );

@@ -30,11 +30,58 @@ describe("ErrorMapper", () => {
       expect(result.message).toContain("Field x is required");
     });
 
-    it("maps ACL_DENIED to -32001 with masked message", () => {
+    it("maps ACL_DENIED to -32040 Access denied, not -32001", () => {
+      // srs FR-ERR-003. -32001 means "unknown or non-owned task id"; spending it
+      // on authorization made those two indistinguishable, and their correct
+      // client responses are opposite.
       const err = createApcoreError("ACL_DENIED", "User admin denied access to secret.module");
       const result = mapper.toJsonRpcError(err);
-      expect(result.code).toBe(-32001);
-      expect(result.message).toBe("Task not found");
+      expect(result.code).toBe(-32040);
+      expect(result.message).toBe("Access denied");
+      expect(result.code).not.toBe(-32001);
+      expect(result.message).not.toContain("secret.module");
+    });
+
+    it.each([
+      ["APPROVAL_DENIED", -32041, "Approval denied"],
+      ["APPROVAL_TIMEOUT", -32042, "Approval timed out"],
+    ])("maps %s off the retryable catch-all", (code, expectedCode, expectedMessage) => {
+      // srs FR-ERR-009 / FR-ERR-010. On -32603 these read as "the server broke,
+      // back off and retry" — for a call a human explicitly refused.
+      const err = createApcoreError(code, "approval 7f3c1e denied by alice@example.com");
+      const result = mapper.toJsonRpcError(err);
+      expect(result.code).toBe(expectedCode);
+      expect(result.message).toBe(expectedMessage);
+      expect(result.code).not.toBe(-32603);
+      expect(result.message).not.toContain("alice@example.com");
+    });
+
+    it("does not sweep APPROVAL_PENDING into the governance block", () => {
+      // A resumable pause, not a refusal. The executor intercepts it before the
+      // mapper's message is used; re-coding it would make the pause terminal.
+      const err = createApcoreError("APPROVAL_PENDING", "Approval required: approvalId=7f3c1e");
+      const result = mapper.toJsonRpcError(err);
+      expect(result.code).toBe(-32603);
+      expect([-32040, -32041, -32042]).not.toContain(result.code);
+    });
+
+    it("widens the message but never the code under discloseRefusalReason", () => {
+      // srs FR-ERR-011: a deployment chooses how much detail travels; what the
+      // refusal *is* does not depend on that choice.
+      const err = createApcoreError(
+        "ACL_DENIED",
+        "caller 'svc-db-writer' cannot access 'admin.users.delete'",
+      );
+      const masked = new ErrorMapper().toJsonRpcError(err);
+      const disclosed = new ErrorMapper(true).toJsonRpcError(err);
+      expect(masked.message).toBe("Access denied");
+      expect(disclosed.code).toBe(masked.code);
+      expect(disclosed.message).toContain("svc-db-writer");
+    });
+
+    it("falls back to the fixed string when apcore says nothing", () => {
+      const err = createApcoreError("ACL_DENIED", "   ");
+      expect(new ErrorMapper(true).toJsonRpcError(err).message).toBe("Access denied");
     });
 
     it("maps MODULE_TIMEOUT to -32603", () => {
