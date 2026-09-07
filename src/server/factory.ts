@@ -19,6 +19,8 @@ import {
   registerSysModules,
 } from "apcore-js";
 
+import { registerA2aNamespace } from "../config.js";
+
 import { SkillMapper } from "../adapters/skill-mapper.js";
 import { SchemaConverter } from "../adapters/schema.js";
 import { AgentCardBuilder, type Registry } from "../adapters/agent-card.js";
@@ -36,18 +38,15 @@ import { anonymousContext, identityOf, identityUserBuilder } from "./context.js"
 import { createExplorerRouter } from "../explorer/handler.js";
 import type { Authenticator } from "../auth/types.js";
 
-// Register apcore-a2a config namespace (stable in apcore-js >= 0.22.0)
-Config.registerNamespace({
-  name: "apcore-a2a",
-  envPrefix: "APCORE_A2A",
-  defaults: {
-    execution_timeout: 300,
-    cors_origins: [],
-    explorer: false,
-    metrics: false,
-    push_notifications: false,
-  },
-});
+// Register the apcore-a2a config namespace (stable in apcore-js >= 0.22.0).
+//
+// The registration itself lives in `../config.ts`, not here: the CLI reads
+// `apcore-a2a.openapi` before it has a Registry to serve, so it needs the
+// namespace registered without importing this module — and a SECOND
+// `Config.registerNamespace` call for the same name throws
+// `ConfigNamespaceDuplicateError`, which at module scope is a crash on import
+// rather than a warning.
+registerA2aNamespace();
 
 // Register error formatter for the a2a adapter (stable top-level export in apcore-js >= 0.22.0)
 try {

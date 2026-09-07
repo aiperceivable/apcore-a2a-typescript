@@ -1,4 +1,4 @@
-export const VERSION = "0.6.0";
+export const VERSION = "0.7.0";
 
 // Public API: serve
 export { serve, asyncServe } from "./serve.js";
@@ -34,3 +34,20 @@ export { PartConverter } from "./adapters/index.js";
 // Server
 export { A2AServerFactory } from "./server/index.js";
 export { ApCoreAgentExecutor } from "./server/index.js";
+
+// OpenAPI backend (feature F-12) — turn an OpenAPI 3.0/3.1 document into a
+// populated apcore Registry, which `serve` accepts like any other.
+export {
+  buildOpenapiBackendFromConfig,
+  openapiBackend,
+  projectModuleId,
+  resolveSpecLocation,
+  synthesizeDescription,
+  MODULE_ID_SEGMENT,
+  WRITE_METHODS,
+} from "./openapi-backend.js";
+export type {
+  GovernanceStateLike,
+  OpenapiBackendLogger,
+  OpenapiBackendOptions,
+} from "./openapi-backend.js";
