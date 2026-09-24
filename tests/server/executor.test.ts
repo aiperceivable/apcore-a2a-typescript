@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ErrorCodes, ModuleError } from "apcore-js";
+import { Context, ErrorCodes, ModuleError } from "apcore-js";
 import { Part, TaskState } from "@a2a-js/sdk";
 import type { ExecutionEventBus, AgentExecutionEvent } from "@a2a-js/sdk/server";
 import { ApCoreAgentExecutor } from "../../src/server/executor.js";
@@ -158,6 +158,45 @@ describe("ApCoreAgentExecutor", () => {
       const event = (bus.events[1] as AgentExecutionEvent).data as { status: { state: TaskState } };
       expect(event.status.state).toBe(TaskState.TASK_STATE_FAILED);
       expect(statusText(event)).toContain("timed out");
+    });
+
+    it("passes globalDeadline to Context.create as epoch seconds, not ms-since-epoch via data", async () => {
+      // apcore-js >= 0.31.0 (spec D-99/D-100/D-101): `BuiltinContextCreation`
+      // reads only the first-class `Context.globalDeadline` field (epoch
+      // SECONDS) and no longer consults `data[CTX_GLOBAL_DEADLINE]` at all.
+      // The executor used to seed the deadline via `data` as a workaround for
+      // apcore-js's pre-0.31 bug of ignoring that field; left unfixed after
+      // the floor bump, the workaround would go silently inert and task
+      // timeouts would stop being enforced by apcore's pipeline. This pins
+      // the deadline reaching `Context.create` as a `globalDeadline` argument
+      // in seconds, not milliseconds and not via `data`.
+      const createSpy = vi.spyOn(Context, "create");
+      const executor = makeExecutor({ answer: 42 });
+      const registry = makeRegistry(["my-skill"]);
+      const agent = new ApCoreAgentExecutor({
+        executor,
+        partConverter,
+        registry,
+        executionTimeout: 5, // seconds
+      });
+
+      const before = Date.now() / 1000;
+      await agent.execute(makeContext({ skillId: "my-skill" }) as any, makeEventBus());
+      const after = Date.now() / 1000;
+
+      expect(createSpy).toHaveBeenCalled();
+      const call = createSpy.mock.calls[0];
+      const [, , , data, , globalDeadline] = call;
+
+      // Not seeded via `data` any more.
+      expect(data).toBeUndefined();
+
+      // Epoch seconds (~1.8e9), not a ms-since-epoch value (~1.8e12) and not
+      // a bare relative offset (~5).
+      expect(globalDeadline).toBeGreaterThan(before + 5 - 1);
+      expect(globalDeadline).toBeLessThan(after + 5 + 5);
+
+      createSpy.mockRestore();
     });
 
     it("publishes input-required for APPROVAL_PENDING error", async () => {

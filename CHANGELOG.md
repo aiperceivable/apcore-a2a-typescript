@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-09-24
+
+Minor release, version-aligned with the Python and Rust SDKs. Raises the required floor to
+`apcore-js` 0.31.0 and `apcore-toolkit` 0.12.0, and fixes a task-execution-timeout defect found
+while reviewing what those two releases changed. `apcore-js` 0.31.0 is two joined audit cycles
+(`PROTOCOL_SPEC` v1.37.0 → v1.59.0) settling 54 cross-language divergences; `apcore-toolkit`
+0.12.0 adds Device Authorization Flow (unused here) and fixes a `$ref` sibling-key
+credential-disclosure bug in its own schema resolver (this package's OpenAPI Backend delegates
+`$ref` resolution to apcore-toolkit's `deepResolveRefs` unmodified, so it inherits that fix with
+no code change of its own).
+
+Suite: 453 tests (unchanged), `tsc --noEmit` clean, `eslint` 0 errors, `tsc` build clean.
+
+### Fixed
+
+- **`ApCoreAgentExecutor` silently dropped the task's execution timeout onto apcore's floor.**
+  `src/server/executor.ts` seeded the deadline via `data[CTX_GLOBAL_DEADLINE]`
+  (`Date.now() + executionTimeoutMs`, milliseconds) instead of `Context.create`'s own
+  `globalDeadline` parameter — a workaround for a bug in `apcore-js` itself, fixed upstream in
+  0.31.0 (spec decisions D-99/D-100/D-101): `BuiltinContextCreation` now reads only the
+  first-class `Context.globalDeadline` field (epoch **seconds**) and no longer consults
+  `data[CTX_GLOBAL_DEADLINE]` at all. Once the floor moved, this package's workaround went from
+  "necessary" to silently inert — apcore's pipeline would fall back to its own config-level
+  default deadline (or none) instead of the task's actual `executionTimeout`, with no error.
+  Fixed to pass `globalDeadline` as `Context.create`'s sixth positional argument, in epoch
+  seconds. The host-side `Promise.race` wall-clock guard in the streaming path (`A-D-13`,
+  further down the same file) is a separate, already-correct mechanism and needed no change.
+
+- **`OpenAPIBackendOptions.authHeaderFactory`'s type was narrower than what
+  `HTTPProxyRegistryWriter` now accepts.** apcore-toolkit 0.12.0 widened
+  `HTTPProxyRegistryWriter.authHeaderFactory` to `() => Record | Promise<Record>` (awaited, so a
+  rotating credential can refresh inside it). This package's own `authHeaderFactory` option type
+  in `src/openapi-backend.ts`, passed straight through to the writer, was still typed
+  synchronous-only, which would reject a valid async factory at the type level even though the
+  writer underneath now supports one. Widened to match.
+
+### Changed — dependency floor
+
+- **Required `apcore-js` floor raised to 0.31.0** (was `>=0.30.0`) and **required
+  `apcore-toolkit` floor raised to 0.12.0** (was `>=0.11.1`). Grepped this package's own
+  `apcore-js`/`apcore-toolkit` surface (`Context`/`Identity`/`CancelToken` via `Context.create`,
+  `Registry`, `Module`, `executorAcl`/`checkAccess`, `Executor.governanceState()`,
+  `deepResolveRefs`, `OpenAPIScanner`/`loadSpec`/`HTTPProxyRegistryWriter`) against both
+  changelogs' breaking-change sections: the D-103 null-identity fix and the `sys_modules`
+  per-group-flag enforcement change are both apcore-rust-only /
+  already-matched-by-this-binding's-defaults respectively and needed nothing here; the two
+  fixes above were the only real findings.
+
 ## [0.7.0] - 2026-09-07
 
 Minor release, version-aligned with the Python and Rust SDKs. Ships the **OpenAPI Backend**

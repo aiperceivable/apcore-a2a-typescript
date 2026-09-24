@@ -114,8 +114,13 @@ export interface OpenapiBackendOptions {
    * `timeout: 30` into a 30 ms fetch timeout.
    */
   timeout?: number;
-  /** Passed to `HTTPProxyRegistryWriter` — the per-request credential hook. */
-  authHeaderFactory?: () => Record<string, string>;
+  /**
+   * Passed to `HTTPProxyRegistryWriter` — the per-request credential hook.
+   * apcore-toolkit >= 0.12.0 awaits the return value, so an async factory
+   * (e.g. one that refreshes a rotating credential) works without a writer
+   * change — matching `HTTPProxyRegistryWriter`'s own widened type.
+   */
+  authHeaderFactory?: () => Record<string, string> | Promise<Record<string, string>>;
   /** Write into this registry instead of a fresh one. */
   registry?: Registry;
   /** True when an extensions directory (or another source) also populates the registry. */

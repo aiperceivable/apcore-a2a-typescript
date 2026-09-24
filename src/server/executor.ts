@@ -211,21 +211,24 @@ export class ApCoreAgentExecutor implements AgentExecutor {
     const identity = getAuthIdentity();
     let apcoreCtx: unknown = undefined;
     try {
-      const { Context, CancelToken, CTX_GLOBAL_DEADLINE } = await import("apcore-js");
+      const { Context, CancelToken } = await import("apcore-js");
       // P0-B: create a CancelToken per task and store it
       const token = new CancelToken();
       this.cancelTokens.set(context.taskId, token);
       // Map the A2A executionTimeout onto apcore's global_deadline so apcore
       // can stop cooperatively between streaming chunks / pipeline steps.
-      // NOTE: apcore-js enforces the deadline from data[CTX_GLOBAL_DEADLINE]
-      // (ms-since-epoch), NOT the Context.create globalDeadline param — so we
-      // seed it via data. Pre-seeding also wins over BuiltinContextCreation,
-      // which only sets the key when absent.
-      const data = { [CTX_GLOBAL_DEADLINE]: Date.now() + this.executionTimeoutMs };
+      // apcore-js >= 0.31.0 (spec D-99/D-100/D-101) makes the first-class
+      // `Context.globalDeadline` field (epoch SECONDS) the pipeline's only
+      // source for this: `BuiltinContextCreation` no longer reads
+      // data[CTX_GLOBAL_DEADLINE] at all, so seeding it via `data` — the
+      // workaround for apcore-js's own pre-0.31 bug, where the field was
+      // documented but never consulted — is now silently inert and the
+      // task's execution timeout would go unenforced by apcore's pipeline.
       // Context.create(identity, traceParent, cancelToken, data, services, globalDeadline)
+      const globalDeadline = (Date.now() + this.executionTimeoutMs) / 1000;
       apcoreCtx = identity
-        ? Context.create(identity, null, token, data)
-        : Context.create(null, null, token, data);
+        ? Context.create(identity, null, token, undefined, undefined, globalDeadline)
+        : Context.create(null, null, token, undefined, undefined, globalDeadline);
     } catch {
       // apcore-js Context/CancelToken not available in this environment
     }
