@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Adopts apcore-toolkit 0.13.0, whose `OpenAPIScanner` now emits every `moduleId` in apcore's
+Canonical ID alphabet itself, and retires this binding's own module-ID projection (FR-OAS-002)
+to match. Tracks the `apcore-a2a` spec's `openapi_backend.json` contract 2.0.
+
+Suite: 464 tests (was 454), 0 skipped; `tsc --noEmit`, `pnpm build` and the pre-commit hooks
+clean.
+
+### Changed — BREAKING
+
+- **OpenAPI-derived module IDs — and therefore A2A skill IDs — change for every camelCase or
+  hyphenated `operationId` and path.** The toolkit splits camelCase into snake_case words where
+  this binding's projection only lowercased: `listPets` → `list_pets` (was `listpets`); under
+  `prefix: "petstore"`, `petstore.list_pets` (was `petstore.listpets`); and camelCase path
+  parameters likewise (`GET /pets/{petId}` → `pets.pet_id.get`, was `pets.petid.get`). A
+  `prefix` is normalised with the rest of the ID (`Pet-Store` → `pet_store.…`). IDs that were
+  already lowercase and legal are unchanged. **Migration:** ACL rules (`targets`), bindings, and
+  `include` / `exclude` patterns keyed on the old IDs must be updated — the scanner's filters
+  match the emitted, normalised ID (`^read_audit_log$`, not `readAuditLog`). The recommended
+  prefixed catch-all deny rule (`petstore.*`) keeps holding, but an allow-list of old operation
+  names now fails closed until it is updated. Clients that call skills by ID must use the new IDs.
+- **Required `apcore-toolkit` floor raised to 0.13.0** (was `>=0.12.0`); `pnpm-lock.yaml`
+  refreshed.
+- **FR-OAS-002 is now a skip policy, applied after `scan`.** `openapiBackend` no longer rewrites
+  IDs: it registers the ID the scanner emitted. It still skips a module whose emitted ID apcore's
+  registry would reject — the one case the toolkit deliberately does not repair, a segment that
+  begins with a digit (`/v1/2fa` → `v1.2fa.get`), or an empty ID from a hook — with the same
+  WARNING as before, now checked on the IDs `scan` returns instead of inside `transformModule`.
+  A hook returning `MyThing` is normalised by the toolkit to `my_thing` and registers (the old
+  in-hook projection made it `mything`; a legality check left there would have skipped it). The
+  toolkit's own legality warning for a skipped module is not re-emitted beside the skip line.
+  The caller's `transformModule` is now handed to the scanner as it is, so it still runs first.
+- **The FR-OAS-003 description repair runs on the modules `scan` returns**, still after the
+  caller's `transformModule` hook, so the synthesis INFO line names the IDs actually emitted —
+  including a deduplicated `…_2`, which the in-hook repair, running before the scanner's
+  deduplication, reported under the pre-deduplication ID (`list_pets` twice, never
+  `list_pets_2`).
+
+### Deprecated
+
+- **`projectModuleId`** (`@deprecated`). apcore-toolkit >= 0.13 emits IDs in apcore's alphabet,
+  so the projection is no longer needed and nothing in this package calls it. Still exported with
+  its behaviour unchanged; it will be removed in a later minor release. It does not reproduce the
+  toolkit's naming (`listPets` → `listpets`, not `list_pets`), so do not use it to predict the ID
+  a module registers under. `MODULE_ID_SEGMENT` is unaffected — the skip policy uses it.
+
+### Fixed
+
+- **An operation removed by `include` / `exclude` was still reported as description-synthesized.**
+  The repair ran inside the scanner's `transformModule` hook, which runs before the scanner's
+  own filters, so the FR-OAS-003 INFO line named operations that never registered and counted
+  them against a denominator that excluded them (`2 of 1 scanned operations`). The feature spec
+  already required the opposite ("an operation excluded by configuration is never synthesized for
+  and never reported"); running the repair after `scan` makes it true.
+
+### Tests
+
+- The conformance driver reads `openapi_backend.json` contract 2.0: re-pinned IDs; three new
+  cases (`projection_hook_output_normalised_not_skipped`,
+  `description_synthesis_report_names_the_emitted_id`,
+  `description_not_synthesized_for_excluded_operation`); the fixture's named `hooks` (an unknown
+  hook name fails the case); `expected_no_error_logs`; and `expected_synthesis_report`. The
+  synthesis assertions are now scoped to the synthesis INFO line (they searched the whole INFO
+  buffer), and the skipped-operation assertion now requires the offending segment to be named
+  apart from the ID on a WARNING line (it searched every level, and `2fa` is a substring of
+  `v1.2fa.get`).
+- New regressions: `openapiBackend` never calls `projectModuleId`; an illegal hook-returned ID is
+  skipped whatever its shape (including the empty ID); a skipped module reaches no later
+  diagnostic (no synthesis, no FR-OAS-005 count, the zero-modules warning fires, nothing at
+  ERROR); a caller hook's `Pet-Store.ListPets` registers as `pet_store.list_pets` with its
+  cleared description repaired.
+
 ## [0.8.0] - 2026-09-24
 
 Minor release, version-aligned with the Python and Rust SDKs. Raises the required floor to

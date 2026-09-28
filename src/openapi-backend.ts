@@ -3,21 +3,28 @@
  *
  * Pipeline:
  *
- *     loadSpec -> OpenAPIScanner.scan -> [repair] -> HTTPProxyRegistryWriter.write -> Registry
+ *     loadSpec -> OpenAPIScanner.scan -> [skip illegal IDs, repair descriptions]
+ *              -> HTTPProxyRegistryWriter.write -> Registry
  *
  * The scanner and the writer live in apcore-toolkit; this module composes them
- * and adds the two repairs the composition needs, neither of which the toolkit
- * can make on its own:
+ * and adds the two things the composition needs on top:
  *
- * - **FR-OAS-002 module-ID projection.** The toolkit sanitizes a derived ID into
- *   `[A-Za-z0-9_.-]`; apcore's registry accepts only
- *   `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$`. Without the projection the canonical
- *   Swagger Petstore scans cleanly and registers nothing — the server starts and
- *   serves an Agent Card with zero skills, and nothing in the path raises.
+ * - **FR-OAS-002 registry-legal module IDs.** apcore-toolkit >= 0.13.0 emits
+ *   every `moduleId` in apcore's Canonical ID alphabet (camelCase split into
+ *   snake_case words, other characters replaced by `_`, a legal ID never
+ *   rewritten), after `basePathPrefix` and the hooks — so this module registers
+ *   the emitted ID unchanged. The one thing the toolkit will not repair is a
+ *   segment that begins with a digit (`/v1/2fa` -> `v1.2fa.get`): such a module
+ *   is skipped before the writer, with a WARNING naming the ID and the segment.
  * - **FR-OAS-003 description repair.** An operation with neither `summary` nor
  *   `description` yields `""`, and `AgentCardBuilder` skips a module whose
  *   description is empty — so the operation would vanish from the Agent Card with
  *   no diagnostic.
+ *
+ * Both run on the modules `scan` *returns* — after the caller's own
+ * `transformModule` hook, the toolkit's normalisation, its filters and its
+ * deduplication — so every diagnostic names the ID that actually reaches the
+ * Agent Card.
  *
  * See `apcore-a2a/docs/features/openapi-backend.md` for the specification and
  * `conformance/fixtures/openapi_backend.json` for the shared contract.
@@ -37,7 +44,8 @@ import {
  * One dot-separated segment of an apcore-legal module ID. apcore enforces
  * `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$` at `Registry.register` and again at
  * `Executor.call`; a segment may not begin with a digit, which is why some
- * derived IDs cannot be repaired at all.
+ * derived IDs cannot be repaired at all. The FR-OAS-002 skip policy tests every
+ * segment of an emitted ID against this.
  */
 export const MODULE_ID_SEGMENT = /^[a-z][a-z0-9_]*$/;
 
@@ -138,9 +146,11 @@ export interface OpenapiBackendOptions {
     operation: Record<string, unknown>,
   ) => Record<string, unknown> | null;
   /**
-   * Caller hook: adjust the finished module. Runs **first**, before the
-   * description repair and the ID projection, so the invariants those two hold
-   * are unconditional whatever this returns.
+   * Caller hook: adjust the finished module. Handed to the scanner as it is, so
+   * it runs **first** — before the toolkit's final ID normalisation, and before
+   * this backend's legality skip and description repair, which both operate on
+   * what `scan` returns. A hook returning `MyThing` therefore registers as
+   * `my_thing`.
    */
   transformModule?: (module: ScannedModule) => ScannedModule | null;
   /** Scanner hook: override the naming algorithm. */
@@ -159,8 +169,14 @@ export interface OpenapiBackendOptions {
  * Lowercase, then `-` -> `_`. Returns `null` when the result still has a segment
  * apcore would reject — such an ID cannot be repaired without *inventing* a
  * character, which is a naming decision belonging to the operator's own hook
- * rather than to a silent default. The module is dropped and reported by the
- * caller.
+ * rather than to a silent default.
+ *
+ * @deprecated apcore-toolkit >= 0.13 emits every module ID in apcore's Canonical
+ *   ID alphabet itself, so this projection is no longer needed and
+ *   {@link openapiBackend} no longer calls it. It will be removed in a later
+ *   minor release. It does not reproduce the toolkit's naming — it lowercases
+ *   without splitting words (`listPets` -> `listpets`, where the toolkit emits
+ *   `list_pets`) — so do not use it to predict a registered ID.
  */
 export function projectModuleId(moduleId: string): string | null {
   const candidate = moduleId.toLowerCase().replace(/-/g, "_");
@@ -171,12 +187,15 @@ export function projectModuleId(moduleId: string): string | null {
   return candidate;
 }
 
-/** The first segment of a projected ID that apcore would still reject. */
-function offendingSegment(moduleId: string): string {
-  const candidate = moduleId.toLowerCase().replace(/-/g, "_");
-  return (
-    candidate.split(".").find((segment) => !MODULE_ID_SEGMENT.test(segment)) ?? candidate
-  );
+/**
+ * The first segment of `moduleId` apcore's registry would reject, else `null`.
+ *
+ * Tested on the ID exactly as the scanner emitted it — never a projection of it.
+ * An empty ID yields the empty segment `""`, matching the toolkit's own legality
+ * warning.
+ */
+function illegalSegment(moduleId: string): string | null {
+  return moduleId.split(".").find((segment) => !MODULE_ID_SEGMENT.test(segment)) ?? null;
 }
 
 /** The minimum surface {@link synthesizeDescription} reads off a scanned module. */
@@ -428,71 +447,62 @@ export async function openapiBackend(
         })
       : (resolved as Record<string, unknown>);
 
-  // --- 2. Scan, repairing each module on the way out ------------------------
-  const dropped: Array<{ derivedId: string; segment: string }> = [];
-  const synthesized: string[] = [];
-
-  const repair = (scanned: ScannedModule): ScannedModule | null => {
-    // A caller's own hook runs FIRST so the two invariants below hold
-    // unconditionally, whatever it returns.
-    let module: ScannedModule | null = scanned;
-    if (options.transformModule) {
-      module = options.transformModule(module);
-      if (module === null || module === undefined) return null;
-    }
-
-    // FR-OAS-003: repair the description before the module can reach a card
-    // filter that would silently drop it.
-    const wasSynthesized = !(module.description ?? "").trim();
-    if (wasSynthesized) {
-      module = cloneModule(module, { description: synthesizeDescription(module) });
-    }
-
-    // FR-OAS-002, LAST: so "every registered module ID is apcore-legal" holds
-    // unconditionally. Runs before the scanner's own `deduplicateIds`, because
-    // lowercasing can CREATE a collision the document did not have —
-    // `listPets` and `listpets` are two operations to OpenAPI and one module ID
-    // to apcore, and projecting afterwards would register one and lose the other
-    // with no warning.
-    const projected = projectModuleId(module.moduleId);
-    if (projected === null) {
-      dropped.push({
-        derivedId: module.moduleId,
-        segment: offendingSegment(module.moduleId),
-      });
-      return null;
-    }
-    if (projected !== module.moduleId) {
-      module = cloneModule(module, { moduleId: projected });
-    }
-
-    // Report the PROJECTED id: it is the one that reaches the Agent Card, and a
-    // diagnostic naming the pre-projection id sends the operator looking for a
-    // skill that does not exist.
-    if (wasSynthesized) synthesized.push(projected);
-    return module;
-  };
-
-  const modules = new OpenAPIScanner().scan(document, {
+  // --- 2. Scan ----------------------------------------------------------------
+  // The caller's own `transformModule` is handed to the scanner as it is, so it
+  // runs FIRST: everything below operates on what `scan` returns, after that
+  // hook, the toolkit's normalisation, its filters and its deduplication.
+  const scanned = new OpenAPIScanner().scan(document, {
     include: options.include,
     exclude: options.exclude,
     basePathPrefix: options.prefix,
     includeDeprecated: options.includeDeprecated ?? true,
     transformOperation: options.transformOperation,
     deriveModuleId: options.deriveModuleId,
-    transformModule: repair,
+    transformModule: options.transformModule,
   });
 
-  // A `transformModule` returning null drops the module SILENTLY, so reporting
-  // is this module's responsibility and cannot be delegated to the scanner.
-  for (const drop of dropped) {
+  // --- 3. Skip what the registry would reject; repair descriptions -----------
+  const skipped: Array<{ moduleId: string; segment: string }> = [];
+  const synthesized: string[] = [];
+  const modules: ScannedModule[] = [];
+  for (const scannedModule of scanned) {
+    let module = scannedModule;
+
+    // FR-OAS-002: apcore-toolkit >= 0.13 emits the Canonical ID alphabet, so the
+    // emitted ID is registered unchanged — never projected again. It leaves
+    // exactly one thing unrepaired (a segment beginning with a digit, or an
+    // empty ID from a hook), and that module is skipped HERE, before the writer:
+    // handed to the writer, apcore's registry would reject it as a write
+    // failure, and every diagnostic below would count it. Checked on the
+    // returned ID, never inside `transformModule`, where a hook's `MyThing` has
+    // not yet been normalised to `my_thing`.
+    const segment = illegalSegment(module.moduleId);
+    if (segment !== null) {
+      skipped.push({ moduleId: module.moduleId, segment });
+      continue;
+    }
+
+    // FR-OAS-003: repair the description before the module can reach a card
+    // filter that would silently drop it. Recorded under the EMITTED id — the
+    // one on the Agent Card, dedup suffix included.
+    if (!(module.description ?? "").trim()) {
+      module = cloneModule(module, { description: synthesizeDescription(module) });
+      synthesized.push(module.moduleId);
+    }
+    modules.push(module);
+  }
+
+  for (const skip of skipped) {
     log.warn(
-      `apcore-a2a: skipping OpenAPI operation '${drop.derivedId}' — the derived module ` +
-        `ID has a segment ('${drop.segment}') apcore's registry cannot accept (it must ` +
+      `apcore-a2a: skipping OpenAPI operation '${skip.moduleId}' — the derived module ` +
+        `ID has a segment ('${skip.segment}') apcore's registry cannot accept (it must ` +
         "match ^[a-z][a-z0-9_]*$), and it cannot be repaired without inventing an ID. " +
         "Supply a deriveModuleId or transformModule hook to name this operation yourself.",
     );
   }
+  // Scanner warnings are re-emitted for the modules that will register. A
+  // skipped module's own legality warning from the toolkit says what the skip
+  // WARNING above already said, so it is not repeated.
   for (const module of modules) {
     for (const warning of module.warnings ?? []) {
       log.warn(`apcore-a2a: ${module.moduleId}: ${warning}`);
@@ -506,14 +516,14 @@ export async function openapiBackend(
   }
   if (synthesized.length > 0) {
     log.info(
-      `apcore-a2a: ${synthesized.length} of ${modules.length + dropped.length} scanned ` +
+      `apcore-a2a: ${synthesized.length} of ${scanned.length} scanned ` +
         'operations had no summary or description; a "{METHOD} {path}" description was ' +
         "synthesized so they appear on the Agent Card. Affected: " +
         [...synthesized].sort().join(", "),
     );
   }
 
-  // --- 3. Collision preflight -----------------------------------------------
+  // --- 4. Collision preflight -----------------------------------------------
   // Full-set, before the first write. Toolkit writers report per-module
   // WriteResults and never abort, so without this a duplicate would arrive as a
   // failed WriteResult, get logged and skipped, and leave a partial registry: a
@@ -532,7 +542,7 @@ export async function openapiBackend(
     );
   }
 
-  // --- 4. Base URL ----------------------------------------------------------
+  // --- 5. Base URL ----------------------------------------------------------
   const baseUrl = options.baseUrl ?? documentServerUrl(document);
   if (!baseUrl) {
     throw new Error(
@@ -541,7 +551,7 @@ export async function openapiBackend(
     );
   }
 
-  // --- 5. Write -------------------------------------------------------------
+  // --- 6. Write -------------------------------------------------------------
   const writer = new HTTPProxyRegistryWriter({
     baseUrl,
     authHeaderFactory: options.authHeaderFactory,

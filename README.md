@@ -42,7 +42,7 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 
 - Node.js >= 18.0.0
 - `apcore-js` >= 0.31.0
-- `apcore-toolkit` >= 0.12.0
+- `apcore-toolkit` >= 0.13.0
 
 > **OpenAPI backend.** No extra install. The backend needs apcore-toolkit's
 > `OpenAPIScanner`, `loadSpec` and `HTTPProxyRegistryWriter`, all of which ship in
@@ -117,6 +117,13 @@ const registry = await openapiBackend("https://api.example.com/openapi.json", {
 
 serve(registry);
 ```
+
+Each skill's ID is the module ID apcore-toolkit (>= 0.13) derives, already in
+apcore's ID alphabet: `operationId: listPets` under prefix `petstore` becomes
+`petstore.list_pets`, and `GET /pets/{petId}` without an `operationId` becomes
+`petstore.pets.pet_id.get`. An operation whose ID still has a segment beginning
+with a digit (`/v1/2fa`) is skipped with a warning — name it with a
+`deriveModuleId` or `transformModule` hook.
 
 Or configure it entirely through the Config Bus:
 

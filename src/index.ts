@@ -40,6 +40,8 @@ export { ApCoreAgentExecutor } from "./server/index.js";
 export {
   buildOpenapiBackendFromConfig,
   openapiBackend,
+  // Deprecated: apcore-toolkit >= 0.13 emits IDs in apcore's alphabet; kept
+  // exported until a later minor release removes it.
   projectModuleId,
   resolveSpecLocation,
   synthesizeDescription,

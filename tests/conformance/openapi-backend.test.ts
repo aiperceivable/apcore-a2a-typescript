@@ -7,20 +7,24 @@
  * the repaired descriptions, the emitted diagnostics, the resulting Agent Card
  * and the failure modes.
  *
- * The scanner's own derivation is pinned by apcore-toolkit's 24-case corpus, not
- * here. What this driver checks is everything the binding adds on top: the
- * apcore-registry ID projection (FR-OAS-002), the empty-description repair
- * (FR-OAS-003), the path-typed spec key (FR-OAS-004), the unapproved-write
- * warning (FR-OAS-005) and the collision preflight (FR-OAS-006).
+ * The scanner's own derivation — including the normalisation of every module ID
+ * into apcore's Canonical ID alphabet (apcore-toolkit >= 0.13.0) — is pinned by
+ * apcore-toolkit's 33-case corpus, not here. What this driver checks is
+ * everything the binding adds on top: registering the emitted ID and skipping
+ * the ones apcore's registry would still reject (FR-OAS-002), the
+ * empty-description repair (FR-OAS-003), the path-typed spec key (FR-OAS-004),
+ * the unapproved-write warning (FR-OAS-005) and the collision preflight
+ * (FR-OAS-006).
  */
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "@sinclair/typebox";
 import { ACL, FunctionModule, Registry, createIdentity } from "apcore-js";
+import { cloneModule, type ScannedModule } from "apcore-toolkit";
 import type { AgentCard } from "@a2a-js/sdk";
 import { AgentCardBuilder } from "../../src/adapters/agent-card.js";
 import { SkillMapper } from "../../src/adapters/skill-mapper.js";
@@ -66,9 +70,47 @@ function recorder() {
     error: (m: string) => void error.push(m),
     info: (m: string) => void info.push(m),
     warnings: () => warn.join("\n"),
+    errors: () => [...error],
     infos: () => info.join("\n"),
+    /** The FR-OAS-003 report line itself — never the whole INFO buffer. */
+    synthesisLines: () => info.filter((line) => line.includes("synthesized")),
     all: () => [...warn, ...error, ...info].join("\n"),
   };
+}
+
+/**
+ * Hooks the fixture names by `hooks.transform_module`, implemented here. The
+ * fixture's notes define each one.
+ */
+const TRANSFORM_MODULE_HOOKS: Readonly<
+  Record<string, (module: ScannedModule) => ScannedModule | null>
+> = {
+  rename_to_mixed_case_id: (module) => cloneModule(module, { moduleId: "MyThing" }),
+};
+
+/**
+ * Backend options for the hooks a case names. An unknown name fails the case:
+ * ignoring it would silently run the hook-free path and pass a case that
+ * asserts what a hook does.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function hookOptionsFor(testCase: any): Partial<OpenapiBackendOptions> {
+  const { transform_module: transformModule, ...unknown } = testCase.hooks ?? {};
+  if (Object.keys(unknown).length > 0) {
+    throw new Error(
+      `${testCase.id}: the fixture names hooks this driver does not implement: ` +
+        Object.keys(unknown).sort().join(", "),
+    );
+  }
+  if (transformModule === undefined) return {};
+  const hook = TRANSFORM_MODULE_HOOKS[transformModule];
+  if (!hook) {
+    throw new Error(
+      `${testCase.id}: the fixture names a transform_module hook this driver lacks: ` +
+        transformModule,
+    );
+  }
+  return { transformModule: hook };
 }
 
 /** Translate a fixture `options` block (snake_case) into backend options. */
@@ -76,6 +118,7 @@ function recorder() {
 function optionsFor(testCase: any, log: ReturnType<typeof recorder>): OpenapiBackendOptions {
   const raw = testCase.options ?? {};
   return {
+    ...hookOptionsFor(testCase),
     prefix: raw.prefix,
     // Forwarded, never defaulted. `no_base_url_anywhere_rejected` asserts the
     // failure when it is absent from both the options and the document, and
@@ -194,16 +237,24 @@ function cases(group: string): any[] {
         }
       }
 
-      // A dropped operation must be reported: the projection runs inside the
-      // scanner's transformModule hook, and a hook returning null drops the
-      // module SILENTLY. An implementation that merely drops it passes every
-      // other assertion in this group and fails here.
+      // A skipped operation must be reported at WARNING, naming the emitted ID
+      // and — in its own right, not only as a substring of the ID — the
+      // offending segment. An implementation that silently drops it fails here.
       for (const drop of c.expected_dropped ?? []) {
-        expect(log.all()).toContain(drop.derived_id);
-        expect(log.all()).toContain(drop.offending_segment);
+        const line = log
+          .warnings()
+          .split("\n")
+          .find((w) => w.includes(drop.derived_id));
+        expect(line, `no WARNING names the skipped id ${drop.derived_id}`).toBeDefined();
+        expect(String(line).replace(drop.derived_id, "")).toContain(drop.offending_segment);
       }
       for (const substring of c.expected_warning_substrings ?? []) {
-        expect(log.all()).toContain(substring);
+        expect(log.warnings()).toContain(substring);
+      }
+      // Skipping an illegal ID before the writer, not leaving apcore's registry
+      // to reject it: the rejection also leaves it unregistered, but as an ERROR.
+      if (c.expected_no_error_logs) {
+        expect(log.errors(), "expected no ERROR lines").toEqual([]);
       }
 
       // The FR-OAS-003 point is the Agent Card, not the registry: assert the
@@ -234,18 +285,28 @@ function cases(group: string): any[] {
       const log = recorder();
       const registry = await openapiBackend(c.document, optionsFor(c, log));
 
+      // Scoped to the synthesis line itself: apcore-toolkit's writer may log its
+      // own "Registered HTTP proxy: <id>" line, so a whole-buffer search would
+      // find every id whatever the report said.
+      const synthesis = log.synthesisLines();
       for (const spec of c.expected_modules) {
         if (!("description_was_synthesized" in spec)) continue;
         if (spec.description_was_synthesized) {
-          expect(log.infos()).toContain("synthesized");
-          // The POST-projection id, and only that one: a diagnostic naming the
-          // pre-projection id sends the operator looking for a skill that does
-          // not exist.
-          expect(log.infos()).toContain(spec.module_id);
+          expect(synthesis, "expected exactly one synthesis INFO line").toHaveLength(1);
+          // The EMITTED id — dedup suffix included — and only that one: a
+          // diagnostic naming any other id sends the operator looking for a
+          // skill that does not exist.
+          expect(synthesis[0]).toContain(spec.module_id);
         } else {
-          expect(log.infos()).not.toContain("synthesized");
+          expect(synthesis).toEqual([]);
         }
         expect(registry.getDefinition(spec.module_id)?.description).toBe(spec.description);
+      }
+      for (const needle of c.expected_synthesis_report?.contains ?? []) {
+        expect(synthesis[0], `the synthesis report lacks ${needle}`).toContain(needle);
+      }
+      for (const needle of c.expected_synthesis_report?.excludes ?? []) {
+        expect(synthesis[0], `the synthesis report names ${needle}`).not.toContain(needle);
       }
     });
   }
@@ -403,7 +464,7 @@ function cases(group: string): any[] {
         { logger: log },
       );
       expect(registry).not.toBeNull();
-      expect(registryIds(registry as Registry)).toEqual(["listpets"]);
+      expect(registryIds(registry as Registry)).toEqual(["list_pets"]);
     } finally {
       if (previous === undefined) delete process.env.APCORE_CONFIG_FILE;
       else process.env.APCORE_CONFIG_FILE = previous;
@@ -456,7 +517,7 @@ function cases(group: string): any[] {
         headers: { "X-Api-Key": "spec-read-secret" },
         logger: log,
       });
-      expect(registryIds(registry)).toEqual(["listpets"]);
+      expect(registryIds(registry)).toEqual(["list_pets"]);
       expect(seenApiKey).toBe("spec-read-secret");
       expect(log.all()).not.toContain("spec-read-secret");
     } finally {
@@ -488,13 +549,16 @@ function cases(group: string): any[] {
       },
       { timeout: 0, logger: recorder() },
     );
-    expect(registryIds(registry)).toEqual(["listpets"]);
+    expect(registryIds(registry)).toEqual(["list_pets"]);
   });
 
-  it("runs the caller's transformModule hook before the repair and the projection", async () => {
+  it("runs the caller's transformModule hook before the toolkit's normalisation and the repair", async () => {
     // Normative ordering. The hook renames to a camelCase, hyphenated id and
-    // clears the description; both invariants must still hold afterwards, which
-    // is only true when the projection and the repair run LAST.
+    // clears the description. apcore-toolkit >= 0.13 normalises the final id
+    // after the hook (`pet_store.list_pets`, words split), and the repair runs on
+    // what `scan` returns — so the module registers, legal and described. A
+    // legality check inside the hook would have skipped it; the retired
+    // in-hook projection would have registered `pet_store.listpets`.
     const log = recorder();
     const registry = await openapiBackend(
       {
@@ -520,16 +584,17 @@ function cases(group: string): any[] {
         }),
       },
     );
-    expect(registryIds(registry)).toEqual(["pet_store.listpets"]);
-    expect(registry.getDefinition("pet_store.listpets")?.description).toBe("GET /pets");
-    // The INFO names the POST-projection id: a diagnostic naming the
-    // pre-projection one sends the operator looking for a skill that does not
-    // exist.
-    expect(log.infos()).toContain("pet_store.listpets");
-    expect(log.infos()).not.toContain("Pet-Store.ListPets");
+    expect(registryIds(registry)).toEqual(["pet_store.list_pets"]);
+    expect(registry.getDefinition("pet_store.list_pets")?.description).toBe("GET /pets");
+    // The INFO names the EMITTED id: a diagnostic naming the hook's raw one
+    // sends the operator looking for a skill that does not exist.
+    expect(log.synthesisLines()).toHaveLength(1);
+    expect(log.synthesisLines()[0]).toContain("pet_store.list_pets");
+    expect(log.synthesisLines()[0]).not.toContain("Pet-Store.ListPets");
+    expect(log.warnings()).not.toContain("skipping OpenAPI operation");
   });
 
-  it("drops a module the caller's hook returns null for, without a projection warning", async () => {
+  it("drops a module the caller's hook returns null for, without a skip warning", async () => {
     const log = recorder();
     const registry = await openapiBackend(
       {
@@ -550,6 +615,71 @@ function cases(group: string): any[] {
     );
     expect(registryIds(registry)).toEqual([]);
     expect(log.warnings()).toContain("no registrable modules");
+    // A caller's deliberate drop is the caller's decision, not an illegal ID.
+    expect(log.warnings()).not.toContain("skipping OpenAPI operation");
+  });
+
+  it.each([
+    ["", ""],
+    ["v1.2fa", "2fa"],
+    ["Ab.9x", "9x"],
+  ])(
+    "skips an illegal hook-returned id %j, naming its segment %j",
+    async (hookId, segment) => {
+      // The skip applies to whatever the scanner emitted, hook output included.
+      // An empty id (only a hook can produce one) names the empty segment, as
+      // the toolkit's own legality warning does.
+      const log = recorder();
+      const registry = await openapiBackend(listPetsDocument, {
+        logger: log,
+        deriveModuleId: () => hookId,
+      });
+      expect(registryIds(registry)).toEqual([]);
+      const skips = log
+        .warnings()
+        .split("\n")
+        .filter((w) => w.includes("skipping OpenAPI operation"));
+      expect(skips).toHaveLength(1);
+      expect(skips[0]).toContain(`('${segment}')`);
+      expect(log.errors()).toEqual([]);
+    },
+  );
+
+  it("a skipped module reaches no later diagnostic", async () => {
+    // An undocumented `POST /v1/2fa` is the worst case: handed to the writer
+    // instead, the synthesis report would count it, FR-OAS-005 would warn about a
+    // write operation that is not on the card, and the zero-modules warning —
+    // the only true statement — would not fire.
+    const log = recorder();
+    const registry = await openapiBackend(
+      {
+        openapi: "3.0.3",
+        info: { title: "t", version: "1" },
+        servers: [{ url: "https://api.example.com" }],
+        paths: { "/v1/2fa": { post: { responses: { "200": { description: "ok" } } } } },
+      },
+      { logger: log },
+    );
+    expect(registryIds(registry)).toEqual([]);
+    expect(log.warnings()).toContain("skipping OpenAPI operation 'v1.2fa.post'");
+    expect(log.warnings()).toContain("no registrable modules");
+    expect(log.warnings()).not.toContain("PUBLIC Agent Card");
+    expect(log.synthesisLines()).toEqual([]);
+    expect(log.errors()).toEqual([]);
+    // The toolkit's own legality warning is not re-emitted beside the skip line.
+    expect(log.warnings()).not.toContain("is not a legal apcore module ID");
+  });
+
+  it("never calls the deprecated projectModuleId", () => {
+    // It is the identity on every id apcore-toolkit >= 0.13 emits, so a call
+    // would be dead work; where it was NOT a no-op — inside transformModule,
+    // before the toolkit's final normalisation — it produced a different id
+    // than the toolkit (`MyThing` -> `mything`, not `my_thing`). An ESM
+    // module-internal call cannot be spied on, so this reads the source.
+    const source = readFileSync(new URL("../../src/openapi-backend.ts", import.meta.url), "utf8");
+    const calls = source.match(/\bprojectModuleId\(/g) ?? [];
+    const declarations = source.match(/function projectModuleId\(/g) ?? [];
+    expect(calls.length - declarations.length).toBe(0);
   });
 
   // ------------------------------------------------------------------------
@@ -583,7 +713,7 @@ function cases(group: string): any[] {
     // to TypeError (the older-signature case) and Rust's `Registry::list` is
     // infallible; a catch-all here is the outlier.
     const registry = new Registry();
-    registerStub(registry, "listpets");
+    registerStub(registry, "list_pets");
     (registry as unknown as { list: () => string[] }).list = () => {
       throw new Error("apcore: module store unavailable");
     };
@@ -598,7 +728,7 @@ function cases(group: string): any[] {
     // TypeError from a `list` that does not accept the `visibility` option
     // falls back to the no-argument call, and the collision is still found.
     const registry = new Registry();
-    registerStub(registry, "listpets");
+    registerStub(registry, "list_pets");
     const original = registry.list.bind(registry);
     (registry as unknown as { list: (options?: unknown) => string[] }).list = (
       options?: unknown,
@@ -612,7 +742,7 @@ function cases(group: string): any[] {
     ).rejects.toThrow("Nothing was registered");
   });
 
-  it("names the required segment pattern in the projection-drop warning", async () => {
+  it("names the required segment pattern in the skip warning", async () => {
     // Canonical diagnostic text (feature spec, "Canonical diagnostic text"): the
     // drop message must carry the pattern `^[a-z][a-z0-9_]*$`. An operator told
     // only that `2fa` is a segment "apcore's registry cannot accept" has been
@@ -703,10 +833,13 @@ function cases(group: string): any[] {
 });
 
 // --------------------------------------------------------------------------
-// projection and synthesis unit coverage (FR-OAS-002 / FR-OAS-003)
+// the deprecated projection, and synthesis unit coverage (FR-OAS-002 / FR-OAS-003)
 // --------------------------------------------------------------------------
 
-describe("projectModuleId", () => {
+// Deprecated — apcore-toolkit >= 0.13 emits ids in apcore's alphabet and the
+// backend no longer calls it — but still exported, so its behaviour stays pinned
+// until the minor release that removes it.
+describe("projectModuleId (deprecated, behaviour unchanged)", () => {
   it.each([
     ["listPets", "listpets"],
     ["pet-store.items.get", "pet_store.items.get"],

@@ -34,7 +34,7 @@
   "dependencies": {
     "@a2a-js/sdk": ">=1.0.1",
     "apcore-js": ">=0.31.0",
-    "apcore-toolkit": ">=0.12.0",
+    "apcore-toolkit": ">=0.13.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.3",
     "uuid": "^13.0.0"
