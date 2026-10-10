@@ -1,6 +1,6 @@
 {
   "name": "apcore-a2a",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "packageManager": "pnpm@10.30.1",
   "description": "Automatic A2A Protocol Adapter for apcore Module Registry",
   "type": "module",
@@ -33,8 +33,8 @@
   },
   "dependencies": {
     "@a2a-js/sdk": ">=1.0.1",
-    "apcore-js": ">=0.31.0",
-    "apcore-toolkit": ">=0.13.0",
+    "apcore-js": ">=0.32.0",
+    "apcore-toolkit": ">=0.14.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.3",
     "uuid": "^13.0.0"
@@ -56,7 +56,7 @@
     "vitest": "^3.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "license": "Apache-2.0",
   "repository": {

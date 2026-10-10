@@ -20,6 +20,12 @@ const codeByName: Record<string, string> = {
 function buildError(spec: any): unknown {
   if (spec.exception === "RuntimeError") return new Error(spec.message ?? "boom");
   let message = spec.message ?? "";
+  if (spec.exception === "SchemaValidationError" && spec.details) {
+    return Object.assign(new Error(spec.message ?? "Input validation failed"), {
+      code: ErrorCodes.SCHEMA_VALIDATION_ERROR,
+      details: spec.details,
+    });
+  }
   if (spec.exception === "SchemaValidationError") {
     message =
       Object.entries(spec.errors ?? {})

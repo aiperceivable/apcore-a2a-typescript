@@ -4,6 +4,7 @@ import {
   ErrorMapper,
   carriesCallerDetail,
   isServerSideSchemaError,
+  sanitizeMessage,
 } from "../../src/adapters/errors.js";
 
 function createApcoreError(code: string, message: string): Error {
@@ -294,5 +295,44 @@ describe("message-widening policy", () => {
     // this function.
     expect(isServerSideSchemaError("Configuration validation failed (1 error(s)):")).toBe(false);
     expect(isServerSideSchemaError("width: must be integer")).toBe(false);
+  });
+});
+
+
+describe("canonical validation diagnostics", () => {
+  it("preserves JSON Pointers produced by the native validator", async () => {
+    const { SchemaValidator } = await import("apcore-js");
+    const { Type } = await import("@sinclair/typebox");
+    const schema = Type.Object({ items: Type.Array(Type.Object({ width: Type.Integer() })) });
+    let error: unknown;
+    try {
+      new SchemaValidator().validateInput({ items: [{ width: "bad" }] }, schema);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(SchemaValidationError);
+    const rpc = new ErrorMapper().toJsonRpcError(error);
+    expect(rpc.code).toBe(-32602);
+    expect(rpc.message).toContain("/items/0/width [type]:");
+    expect(Object.keys(rpc).sort()).toEqual(["code", "message"]);
+  });
+
+  it("limits canonical diagnostics to 500 Unicode characters", () => {
+    const error = new SchemaValidationError("Input validation failed", [
+      { path: "/width", keyword: "type", message: "\u754c".repeat(600) },
+    ]);
+    const message = new ErrorMapper().toJsonRpcError(error).message;
+    expect(message).toMatch(/^\/width \[type\]: /);
+    expect(Array.from(message)).toHaveLength(500);
+  });
+});
+
+
+describe("Unicode message sanitization", () => {
+  it("does not split an astral character at the truncation boundary", () => {
+    const message = sanitizeMessage("x" + "\u{1f600}".repeat(600));
+    expect(message).toBe("x" + "\u{1f600}".repeat(499));
+    expect(Array.from(message)).toHaveLength(500);
+    expect(message).not.toMatch(/\p{Surrogate}/u);
   });
 });

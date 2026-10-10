@@ -115,8 +115,7 @@ export class ErrorMapper {
       if (isServerSideSchemaError((error as { message: string }).message)) {
         return { code: CODE_INTERNAL_ERROR, message: "Internal server error" };
       }
-      const message = this.sanitizeMessage((error as { message: string }).message);
-      return { code: CODE_INVALID_PARAMS, message };
+      return { code: CODE_INVALID_PARAMS, message: schemaErrorMessage(error) };
     }
 
     if (errorCode === ErrorCodes.GENERAL_INVALID_INPUT) {
@@ -173,6 +172,26 @@ export class ErrorMapper {
   private sanitizeMessage(message: string): string {
     return sanitizeMessage(message);
   }
+}
+
+/** Preserve canonical JSON Pointers without treating them as file paths. */
+function schemaErrorMessage(error: Error): string {
+  const errors = (error as Error & { details?: { errors?: unknown } }).details?.errors;
+  const diagnostics: string[] = [];
+  if (Array.isArray(errors)) {
+    for (const entry of errors) {
+      if (
+        !entry || typeof entry !== "object" ||
+        typeof entry.path !== "string" || typeof entry.keyword !== "string" ||
+        typeof entry.message !== "string"
+      ) continue;
+      // Only the structured pointer bypasses filesystem-path redaction.
+      const path = entry.path || "<root>";
+      diagnostics.push(`${path} [${sanitizeMessage(entry.keyword)}]: ${sanitizeMessage(entry.message)}`);
+    }
+  }
+  if (diagnostics.length > 0) return Array.from(diagnostics.join("; ")).slice(0, 500).join("");
+  return sanitizeMessage(error.message);
 }
 
 /**
@@ -261,5 +280,6 @@ export function sanitizeMessage(message: string): string {
   let sanitized = message.replace(/~?\/\S*/g, "");
   // Strip traceback lines (matching Python's behavior)
   sanitized = sanitized.replace(/^.*(?:Traceback|File "|line \d+).*$/gm, "");
-  return sanitized.replace(/\s+/g, " ").trim().slice(0, 500);
+  // Count Unicode code points so truncation cannot split a surrogate pair.
+  return Array.from(sanitized.replace(/\s+/g, " ").trim()).slice(0, 500).join("");
 }

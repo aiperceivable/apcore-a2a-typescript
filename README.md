@@ -40,14 +40,14 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 
 ## Requirements
 
-- Node.js >= 18.0.0
-- `apcore-js` >= 0.31.0
-- `apcore-toolkit` >= 0.13.0
+- Node.js >= 20.0.0
+- `apcore-js` >= 0.32.0
+- `apcore-toolkit` >= 0.14.0
 
 > **OpenAPI backend.** No extra install. The backend needs apcore-toolkit's
 > `OpenAPIScanner`, `loadSpec` and `HTTPProxyRegistryWriter`, all of which ship in
 > the `apcore-toolkit` dependency above and use the global `fetch` available on
-> Node 18+ — so this package declares no `openapi` optional dependency. (The
+> Node 20+ — so this package declares no `openapi` optional dependency. (The
 > Python distribution declares an `apcore-a2a[openapi]` extra because there the
 > same three pieces sit behind `apcore-toolkit[http-proxy]`.)
 

@@ -320,6 +320,15 @@ describe("failed-task error classification", () => {
     expect(text).toContain("'1' and 'l' cannot be used together");
   });
 
+  it("preserves canonical JSON Pointers in the failed task status", async () => {
+    const text = await failedText(new ModuleError(
+      ErrorCodes.SCHEMA_VALIDATION_ERROR,
+      "Input validation failed",
+      { errors: [{ path: "/items/0/width", keyword: "type", message: "must be integer" }] },
+    ));
+    expect(text).toContain("/items/0/width [type]: must be integer");
+  });
+
   it("names the field on a schema-validation error", async () => {
     const text = await failedText(
       new ModuleError(ErrorCodes.SCHEMA_VALIDATION_ERROR, "width: must be integer"),
