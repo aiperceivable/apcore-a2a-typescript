@@ -41,8 +41,8 @@ Built on [`@a2a-js/sdk`](https://www.npmjs.com/package/@a2a-js/sdk) and [Express
 ## Requirements
 
 - Node.js >= 20.0.0
-- `apcore-js` >= 0.32.0
-- `apcore-toolkit` >= 0.14.0
+- `apcore-js` >= 0.32.3
+- `apcore-toolkit` >= 0.14.1
 
 > **OpenAPI backend.** No extra install. The backend needs apcore-toolkit's
 > `OpenAPIScanner`, `loadSpec` and `HTTPProxyRegistryWriter`, all of which ship in
