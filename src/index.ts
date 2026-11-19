@@ -1,4 +1,4 @@
-export const VERSION = "0.7.0";
+export const VERSION = "0.8.7";
 
 // Public API: serve
 export { serve, asyncServe } from "./serve.js";
