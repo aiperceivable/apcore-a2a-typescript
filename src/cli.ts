@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, statSync, readFileSync } from "node:fs";
+import { existsSync, statSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -450,14 +450,17 @@ async function runServe(values: CliValues): Promise<void> {
   });
 }
 
-// Only run when executed directly (not imported in tests)
-const thisFile = fileURLToPath(import.meta.url);
-const isMain =
-  typeof process !== "undefined" &&
-  process.argv[1] &&
-  resolve(process.argv[1]) === resolve(thisFile);
+// Node resolves npm bin symlinks in the module URL, but their original path remains in argv.
+function isDirectInvocation(): boolean {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
 
-if (isMain) {
+if (isDirectInvocation()) {
   main().catch((e) => {
     console.error(e);
     process.exit(2);

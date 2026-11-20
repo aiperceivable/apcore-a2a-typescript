@@ -6,7 +6,9 @@ import {
   parseOpenapiHeaders,
   resolveAuthKey,
 } from "../src/cli.js";
-import { writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
+import { transpileModule, ModuleKind, ScriptTarget } from "typescript";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -349,4 +351,27 @@ describe("unknown arguments", () => {
       ]),
     ).not.toThrow();
   });
+});
+
+it("runs the CLI main program when invoked through a package bin symlink", () => {
+  const root = mkdtempSync(join(tmpdir(), "a2a-cli-bin-"));
+  try {
+    const dist = join(root, "dist");
+    const bin = join(root, ".bin");
+    const entry = join(dist, "cli.mjs");
+    const command = join(bin, "apcore-a2a");
+    mkdirSync(dist);
+    mkdirSync(bin);
+    writeFileSync(join(root, "package.json"), JSON.stringify({ version: "9.8.7" }));
+    const source = readFileSync(new URL("../src/cli.ts", import.meta.url), "utf-8");
+    writeFileSync(entry, transpileModule(source, {
+      compilerOptions: { module: ModuleKind.ESNext, target: ScriptTarget.ES2022 },
+    }).outputText);
+    symlinkSync(entry, command);
+    const result = spawnSync(process.execPath, [command, "--version"], { encoding: "utf-8" });
+    expect(result.status).toBe(0);
+    expect(result.stdout.trim()).toBe("apcore-a2a v9.8.7");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

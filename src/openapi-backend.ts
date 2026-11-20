@@ -37,6 +37,7 @@ import {
   OpenAPIScanner,
   cloneModule,
   loadSpec,
+  validateEffectiveProxyModules,
   type ScannedModule,
 } from "apcore-toolkit";
 
@@ -451,7 +452,7 @@ export async function openapiBackend(
   // The caller's own `transformModule` is handed to the scanner as it is, so it
   // runs FIRST: everything below operates on what `scan` returns, after that
   // hook, the toolkit's normalisation, its filters and its deduplication.
-  const scanned = new OpenAPIScanner().scan(document, {
+  const scanned = new OpenAPIScanner().scanWithEffectiveParameters(document, {
     include: options.include,
     exclude: options.exclude,
     basePathPrefix: options.prefix,
@@ -541,6 +542,8 @@ export async function openapiBackend(
         "to namespace them.",
     );
   }
+
+  validateEffectiveProxyModules(modules);
 
   // --- 5. Base URL ----------------------------------------------------------
   const baseUrl = options.baseUrl ?? documentServerUrl(document);
